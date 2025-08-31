@@ -1,0 +1,18 @@
+# --- GUI ---
+PyQt5==5.15.11              # interfaz con Qt
+
+# --- Datos / Excel ---
+pandas>=2.2,<3.0            # DataFrame y utilidades
+openpyxl==3.1.5             # leer/escribir .xlsx
+
+# --- Navegación web / WhatsApp Web ---
+selenium==4.23.1             # automatización del navegador
+webdriver-manager==4.0.2     # descarga automática de ChromeDriver
+
+# --- Word / PDF ---
+python-docx==1.1.2          # previsualizar textos de .docx
+pypdf==4.3.1                # extracción de texto PDF (fallback ligero)
+PyMuPDF==1.24.10            # (opcional) mejor extracción de PDF; quítalo si quieres un build más liviano
+
+# --- Dependencias base (pinned para evitar sorpresas) ---
+numpy>=2.0                 # requerido por pandas
