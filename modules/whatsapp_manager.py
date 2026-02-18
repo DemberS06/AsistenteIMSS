@@ -51,7 +51,11 @@ class WhatsAppManager:
                 "span[data-icon='plus-rounded']",
                 "span[data-testid='clip']",
             ],
-            "file_input": ["input[type='file']"],
+            "file_input": [
+                "input[type='file'][accept='*']",
+                "input[type='file'][accept='application/*']",
+                "input[type='file']",
+            ],
             "send_button": ["span[data-icon='send']", "button[data-testid='compose-btn-send']"],
         }
 
@@ -381,7 +385,10 @@ class WhatsAppManager:
 
     # ---------- envío (texto primero, luego adjunto) ----------
     def send_message_with_pdf(self, phone_number: str, message: str, pdf_path: str, wait_for_qr: float = None):
-        import traceback, time, math
+        import os
+        import time
+        import math
+        import traceback
 
         try:
             if not pdf_path or not os.path.exists(pdf_path):
@@ -392,7 +399,10 @@ class WhatsAppManager:
                     self.driver = self.webmanager.driver
                     self.own_driver = False
                 else:
-                    return {"status": "error", "message": "Driver no inicializado. Abre WhatsApp Web primero con whatsapp.open_whatsapp()."}
+                    return {
+                        "status": "error",
+                        "message": "Driver no inicializado. Abre WhatsApp Web primero con whatsapp.open_whatsapp().",
+                    }
 
             if not self.check_session_active():
                 try:
@@ -405,6 +415,121 @@ class WhatsAppManager:
                     pass
                 return {"status": "needs_qr", "message": "Sesión no activa. Escanea el QR.", "qr_path": self.qr_image_path}
 
+            # ---------------- helpers locales ----------------
+            def _press_esc_native_best_effort():
+                """
+                Cierra el selector nativo (explorador) si se abrió.
+                En Windows: manda ESC a nivel SO (ctypes). En otros: intenta ESC con Selenium.
+                """
+                ok = False
+                try:
+                    if os.name == "nt":
+                        import ctypes
+                        user32 = ctypes.windll.user32
+                        VK_ESCAPE = 0x1B
+                        KEYEVENTF_KEYUP = 0x0002
+
+                        # key down + key up
+                        user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+                        time.sleep(0.02)
+                        user32.keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0)
+                        ok = True
+                except Exception:
+                    ok = False
+
+                # Fallback (cierra menús dentro del navegador)
+                if not ok:
+                    try:
+                        ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                        ok = True
+                    except Exception:
+                        ok = False
+
+                return ok
+
+            def _open_attach_menu():
+                clicked = False
+                for clip_sel in self.selectors.get("clip_button", []):
+                    try:
+                        if self._click_if_present([clip_sel]):
+                            print(f"[WAM] send_message_with_pdf: clip click OK con selector: {clip_sel}")
+                            clicked = True
+                            break
+                    except Exception:
+                        continue
+                time.sleep(0.35)
+                return clicked
+
+            def _safe_attr(el, name: str) -> str:
+                try:
+                    v = el.get_attribute(name)
+                    return "" if v is None else str(v)
+                except Exception:
+                    return ""
+
+            def _describe_file_input(el, idx: int) -> dict:
+                info = {"idx": idx}
+                info["accept"] = _safe_attr(el, "accept").lower()
+                info["multiple"] = _safe_attr(el, "multiple")
+                info["aria_label"] = _safe_attr(el, "aria-label")
+                info["data_testid"] = _safe_attr(el, "data-testid")
+                info["name"] = _safe_attr(el, "name")
+                info["id"] = _safe_attr(el, "id")
+                info["class"] = _safe_attr(el, "class")
+                info["style"] = _safe_attr(el, "style")
+                try:
+                    info["displayed"] = bool(el.is_displayed())
+                except Exception:
+                    info["displayed"] = None
+                try:
+                    info["enabled"] = bool(el.is_enabled())
+                except Exception:
+                    info["enabled"] = None
+                try:
+                    sz = el.size or {}
+                    info["size"] = (sz.get("width", 0), sz.get("height", 0))
+                except Exception:
+                    info["size"] = None
+                try:
+                    loc = el.location or {}
+                    info["loc"] = (loc.get("x", 0), loc.get("y", 0))
+                except Exception:
+                    info["loc"] = None
+                return info
+
+            def _is_media_accept(acc: str) -> bool:
+                acc = (acc or "").lower()
+                return ("image" in acc) or ("video" in acc)
+
+            def _score_input(info: dict) -> int:
+                acc = (info.get("accept") or "").lower()
+                score = 0
+
+                # señales positivas (documentos / pdf)
+                if "pdf" in acc:
+                    score += 50
+                if "application" in acc:
+                    score += 15
+                if "*" in acc or acc.strip() == "":
+                    # a veces el de documentos viene vacío o con */*
+                    score += 12
+
+                # señales negativas (solo media)
+                if "image" in acc and "pdf" not in acc:
+                    score -= 25
+                if "video" in acc and "pdf" not in acc:
+                    score -= 15
+                if "audio" in acc and "pdf" not in acc:
+                    score -= 10
+
+                if info.get("enabled") is True:
+                    score += 3
+                if info.get("displayed") is True:
+                    score += 2
+
+                return score
+
+            # ---------------- abrir chat ----------------
             pn = str(phone_number).strip()
             if pn.startswith("+"):
                 pn = pn[1:]
@@ -422,6 +547,7 @@ class WhatsAppManager:
                     print("[WAM] send_message_with_pdf: no se pudo abrir chat (fallback) ->", e)
                     return {"status": "error", "message": f"No se pudo abrir el chat para {phone_number} (búsqueda y fallback fallaron)."}
 
+            # ---------------- encontrar caja de texto ----------------
             input_box = None
             try:
                 for sel in self.selectors.get("chat_input", []):
@@ -439,6 +565,7 @@ class WhatsAppManager:
                             break
                     except Exception:
                         continue
+
                 if input_box is None:
                     all_inputs = self.driver.find_elements(By.CSS_SELECTOR, "div[contenteditable='true']")
                     if all_inputs:
@@ -459,6 +586,7 @@ class WhatsAppManager:
             except Exception:
                 input_box = None
 
+            # ---------------- enviar texto primero ----------------
             if message and message.strip():
                 if input_box is None:
                     print("[WAM] send_message_with_pdf: no se encontró caja de texto; texto puede no enviarse ahora.")
@@ -471,6 +599,7 @@ class WhatsAppManager:
                                 self.driver.execute_script("arguments[0].focus();", input_box)
                             except Exception:
                                 pass
+
                         lines = str(message).splitlines()
                         for i, line in enumerate(lines):
                             input_box.send_keys(line)
@@ -482,54 +611,100 @@ class WhatsAppManager:
                     except Exception as e:
                         print("[WAM] send_message_with_pdf: error enviando texto:", e)
 
+            # ---------------- adjuntar PDF ----------------
             try:
                 print("[WAM] send_message_with_pdf: adjuntando PDF...")
-                for clip_sel in self.selectors.get("clip_button", []):
-                    try:
-                        if self._click_if_present([clip_sel]):
-                            break
-                    except Exception:
-                        continue
-                time.sleep(0.25) 
 
-                file_input = None
-                file_input = self._find_first_present(self.selectors.get("file_input", []))
-                if file_input is None:
+                # 1) abrir menú de adjuntos
+                _open_attach_menu()
+
+                # 2) recolectar inputs; si solo hay media, forzar "Document/Documento"
+                file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+                acc0 = (file_inputs[0].get_attribute("accept") or "").lower().strip() if len(file_inputs) == 1 else ""
+
+                if len(file_inputs) == 1 and _is_media_accept(acc0):
+                    # Click al item "Document/Documento" (esto ABRE el selector nativo; lo cerramos con ESC)
                     try:
-                        file_input = WebDriverWait(self.driver, 6).until(
-                            lambda d: self._find_first_present(self.selectors.get("file_input", []))
+                        doc_item = (
+                            self.driver.find_elements(By.CSS_SELECTOR, "div[role='menuitem'][aria-label='Document']") or
+                            self.driver.find_elements(By.CSS_SELECTOR, "div[role='menuitem'][aria-label='Documento']")
                         )
-                    except Exception:
-                        file_input = None
-                if file_input is None:
-                    try:
-                        file_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-                    except Exception:
-                        file_input = None
+                        if doc_item:
+                            try:
+                                doc_item[0].click()
+                            except Exception:
+                                self.driver.execute_script("arguments[0].click();", doc_item[0])
 
-                if file_input is None:
-                    print("[WAM] send_message_with_pdf: no se encontró input[type='file']")
+                            # cerrar el selector nativo del SO (explorador)
+                            time.sleep(0.15)
+                            _press_esc_native_best_effort()
+                            time.sleep(0.25)
+                    except Exception:
+                        pass
+
+                    # Re-abrir menú (a veces ESC lo cierra) y re-scan
+                    _open_attach_menu()
+
+                # Espera por inputs (WhatsApp a veces tarda en inyectarlos)
+                end = time.time() + 6.0
+                while time.time() < end:
+                    try:
+                        file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+                    except Exception:
+                        file_inputs = []
+                    if file_inputs:
+                        break
+                    time.sleep(0.2)
+
+                print(f"[WAM] send_message_with_pdf: encontrados input[type=file] -> {len(file_inputs)}")
+
+                if not file_inputs:
                     return {"status": "error", "message": "No se encontró input[type='file'] para adjuntar el PDF."}
 
+                debug_infos = []
+                for i, el in enumerate(file_inputs):
+                    info = _describe_file_input(el, i)
+                    debug_infos.append(info)
+                    print(
+                        "[WAM] file_input[{idx}] accept='{accept}' multiple='{multiple}' displayed={displayed} enabled={enabled} "
+                        "data-testid='{data_testid}' aria='{aria_label}' id='{id}' name='{name}' class='{class}' style='{style}' "
+                        "size={size} loc={loc}".format(**info)
+                    )
+
+                # 3) elegir el mejor input (documentos)
+                scored = [(_score_input(info), info["idx"]) for info in debug_infos]
+                scored.sort(reverse=True)
+                best_score, best_idx = scored[0]
+                file_input = file_inputs[best_idx]
+                print(f"[WAM] send_message_with_pdf: elegido file_input[{best_idx}] con score={best_score}")
+
+                # 4) enviar el path UNA sola vez (aquí estaba el duplicado antes)
+                abs_pdf = os.path.abspath(pdf_path)
+                print(f"[WAM] send_message_with_pdf: enviando send_keys('{abs_pdf}') al file_input[{best_idx}]")
                 try:
-                    file_input.send_keys(os.path.abspath(pdf_path))
+                    file_input.send_keys(abs_pdf)
                 except Exception as e:
                     print("[WAM] send_message_with_pdf: file_input.send_keys falló ->", e)
                     try:
-                        self.driver.execute_script("arguments[0].style.display='block';", file_input)
-                        file_input.send_keys(os.path.abspath(pdf_path))
-                    except Exception:
-                        print("[WAM] send_message_with_pdf: fallback file_input JS falló")
+                        self.driver.execute_script(
+                            "arguments[0].style.display='block'; arguments[0].style.visibility='visible';",
+                            file_input
+                        )
+                        time.sleep(0.1)
+                        file_input.send_keys(abs_pdf)
+                    except Exception as e2:
+                        return {"status": "error", "message": f"No se pudo cargar el archivo en input[type=file]: {e2}"}
 
-                time.sleep(2)  # dejar cargar preview
+                time.sleep(1.8)  # dejar cargar preview
 
+                # 5) buscar botón de enviar (preview)
                 send_selectors = list(self.selectors.get("send_button", []))
                 send_selectors.extend([
                     "button[aria-label='Send']",
                     "button[data-tab='11']",
                     "span[data-icon='wds-ic-send-filled']",
                     "button[aria-label='Enviar']",
-                    "button[data-testid='compose-btn-send']"
+                    "button[data-testid='compose-btn-send']",
                 ])
 
                 send_positive_tokens = ("send", "wds-ic-send", "wds-ic-send-filled", "compose-btn-send", "enviar")
@@ -538,7 +713,10 @@ class WhatsAppManager:
                 try:
                     fi_loc = file_input.location
                     fi_size = file_input.size
-                    fi_center = (fi_loc.get("x", 0) + fi_size.get("width", 0)/2.0, fi_loc.get("y", 0) + fi_size.get("height", 0)/2.0)
+                    fi_center = (
+                        fi_loc.get("x", 0) + fi_size.get("width", 0) / 2.0,
+                        fi_loc.get("y", 0) + fi_size.get("height", 0) / 2.0,
+                    )
                 except Exception:
                     fi_center = (0, 0)
 
@@ -546,8 +724,8 @@ class WhatsAppManager:
                     try:
                         loc = el.location
                         size = el.size
-                        cx = loc.get("x", 0) + size.get("width", 0)/2.0
-                        cy = loc.get("y", 0) + size.get("height", 0)/2.0
+                        cx = loc.get("x", 0) + size.get("width", 0) / 2.0
+                        cy = loc.get("y", 0) + size.get("height", 0) / 2.0
                         return math.hypot(cx - fi_center[0], cy - fi_center[1])
                     except Exception:
                         return float("inf")
@@ -562,26 +740,11 @@ class WhatsAppManager:
                         try:
                             if not el.is_displayed():
                                 continue
-                            aria = ""
-                            data_icon = ""
-                            title = ""
-                            inner = ""
-                            try:
-                                aria = (el.get_attribute("aria-label") or "").lower()
-                            except Exception:
-                                aria = ""
-                            try:
-                                data_icon = (el.get_attribute("data-icon") or "").lower()
-                            except Exception:
-                                data_icon = ""
-                            try:
-                                title = (el.get_attribute("title") or "").lower()
-                            except Exception:
-                                title = ""
-                            try:
-                                inner = (el.text or "").lower()
-                            except Exception:
-                                inner = ""
+
+                            aria = (el.get_attribute("aria-label") or "").lower()
+                            data_icon = (el.get_attribute("data-icon") or "").lower()
+                            title = (el.get_attribute("title") or "").lower()
+                            inner = (el.text or "").lower()
 
                             attr_blob = " ".join([aria, data_icon, title, inner])
 
@@ -589,77 +752,58 @@ class WhatsAppManager:
                                 continue
 
                             pos_score = 1 if any(tok in attr_blob for tok in send_positive_tokens) else 0
-
                             dist = _distance_to_file_input(el)
+
                             candidates.append({"el": el, "selector": sb, "pos_score": pos_score, "dist": dist, "blob": attr_blob})
                         except Exception:
                             continue
-                
-                #return {"status": "ok", "message": "Enviado (texto + PDF)."}
 
                 candidates_sorted = sorted(candidates, key=lambda x: (-x["pos_score"], x["dist"]))
-
                 send_btn = None
                 send_btn_selector = None
                 if candidates_sorted:
-                    chosen = candidates_sorted[0]
-                    send_btn = chosen["el"]
-                    send_btn_selector = chosen.get("selector")
-                    print(f"[WAM] send_message_with_pdf: candidato send elegido: selector={send_btn_selector}, dist={chosen['dist']:.1f}, blob={chosen['blob'][:120]}")
+                    chosen_send = candidates_sorted[0]
+                    send_btn = chosen_send["el"]
+                    send_btn_selector = chosen_send.get("selector")
+                    print(
+                        f"[WAM] send_message_with_pdf: candidato send elegido: selector={send_btn_selector}, "
+                        f"dist={chosen_send['dist']:.1f}, blob={chosen_send['blob'][:120]}"
+                    )
 
                 if send_btn is None:
-                #if True:
-                    print("[WAM] send_message_with_pdf: no se detectó botón send confiable, usar ENTER fallback muy breve")
+                    print("[WAM] send_message_with_pdf: no se detectó botón send confiable, usar ENTER fallback")
                     try:
                         if input_box:
                             input_box.send_keys(Keys.ENTER)
                             time.sleep(0.6)
                         else:
-                            try:
-                                self.driver.save_screenshot("whatsapp_debug.png")
-                                src = getattr(self.driver, "page_source", None)
-                                if src:
-                                    with open("whatsapp_debug.html", "w", encoding="utf-8") as fh:
-                                        fh.write(src[:500000])
-                                print("[WAM] send_message_with_pdf: debug artifacts saved (no send candidate).")
-                            except Exception:
-                                pass
                             return {"status": "error", "message": "No se detectó botón de envío confiable y no hay caja para fallback ENTER."}
                     except Exception as e:
-                        print("[WAM] send_message_with_pdf: ENTER fallback falló:", e)
-                        try:
-                            self.driver.save_screenshot("whatsapp_debug.png")
-                            src = getattr(self.driver, "page_source", None)
-                            if src:
-                                with open("whatsapp_debug.html", "w", encoding="utf-8") as fh:
-                                    fh.write(src[:500000])
-                        except Exception:
-                            pass
                         return {"status": "error", "message": f"Intento de fallback ENTER falló: {e}"}
-
-                clicked = False
-                try:
-                    send_btn.click()
-                    clicked = True
-                    print("[WAM] send_message_with_pdf: click normal en send intentado.")
-                except Exception:
+                else:
                     try:
-                        self.driver.execute_script("arguments[0].click();", send_btn)
-                        clicked = True
-                        print("[WAM] send_message_with_pdf: click JS en send intentado.")
-                    except Exception:
                         try:
-                            self.driver.execute_script(
-                                "var ev = new MouseEvent('click', {bubbles:true,cancelable:true,view:window}); arguments[0].dispatchEvent(ev);",
-                                send_btn
-                            )
-                            clicked = True
-                            print("[WAM] send_message_with_pdf: dispatchEvent click en send intentado.")
+                            send_btn.click()
+                            print("[WAM] send_message_with_pdf: click normal en send intentado.")
                         except Exception:
-                            clicked = False
+                            self.driver.execute_script("arguments[0].click();", send_btn)
+                            print("[WAM] send_message_with_pdf: click JS en send intentado.")
+                    except Exception as e:
+                        return {"status": "error", "message": f"No se pudo hacer click en send: {e}"}
 
-                time.sleep(1)
+                    time.sleep(0.9)
 
+                # 6) cerrar cualquier cosa que haya quedado abierta:
+                #    - ESC dentro del navegador (menú/preview)
+                #    - ESC a nivel SO por si el selector nativo se quedó abierto
+                try:
+                    ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                except Exception:
+                    pass
+                _press_esc_native_best_effort()
+                time.sleep(0.15)
+
+                # 7) detectar error tipo "not supported"
                 err_text = None
                 try:
                     alert_selectors = ("div[role='alert']", "div[aria-live='assertive']", "div[aria-live='polite']", "div[data-testid='toast-container']")
@@ -681,19 +825,11 @@ class WhatsAppManager:
                                 break
                         except Exception:
                             continue
-
-                    if not err_text:
-                        ps = (self.driver.page_source or "")[:20000].lower()
-                        for needle in ("not supported", "archive not supported", "no soport", "archivo no", "no se puede", "not support"):
-                            if needle in ps:
-                                start = ps.find(needle)
-                                snippet = ps[max(0, start-80): start+len(needle)+120]
-                                err_text = f"UI snippet: ...{snippet}..."
-                                break
                 except Exception:
                     pass
 
                 if err_text:
+                    print(f"[WAM] send_message_with_pdf: error UI detectado: {err_text}")
                     return {"status": "error", "message": f"WhatsApp UI error after send attempt: {err_text}"}
 
             except Exception as e:
@@ -710,6 +846,7 @@ class WhatsAppManager:
                 return {"status": "error", "message": f"Error adjuntando/enviando PDF: {e}", "trace": traceback.format_exc()}
 
             return {"status": "ok", "message": "Enviado (texto + PDF)."}
+
         except Exception as e:
             try:
                 self.driver.save_screenshot("whatsapp_debug_outer_exception.png")
@@ -720,7 +857,7 @@ class WhatsAppManager:
             except Exception:
                 pass
             return {"status": "error", "message": str(e), "trace": traceback.format_exc()}
-
+            
     # ---------- cleanup ----------
     def quit(self):
         if self.own_driver and self.driver:
