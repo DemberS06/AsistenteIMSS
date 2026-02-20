@@ -636,17 +636,17 @@ class WhatsAppManager:
                                 self.driver.execute_script("arguments[0].click();", doc_item[0])
 
                             # cerrar el selector nativo del SO (explorador)
-                            time.sleep(0.15)
-                            _press_esc_native_best_effort()
-                            time.sleep(0.25)
+                            time.sleep(1)
+                            #_press_esc_native_best_effort()
+                            time.sleep(1)
                     except Exception:
                         pass
 
                     # Re-abrir menú (a veces ESC lo cierra) y re-scan
-                    _open_attach_menu()
+                    #_open_attach_menu()
 
                 # Espera por inputs (WhatsApp a veces tarda en inyectarlos)
-                end = time.time() + 6.0
+                end = time.time() + 3.0
                 while time.time() < end:
                     try:
                         file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")

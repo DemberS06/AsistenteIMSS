@@ -5,7 +5,7 @@
 [Setup]
 AppId={{8A23B90A-7F44-4C20-8F6E-4A3AD32B7A11}}
 AppName=Asistente IMSS
-AppVersion=1.0.0
+AppVersion=1.0.2
 AppPublisher=Tu Organización
 AppPublisherURL=https://tu-dominio-ejemplo.com
 AppSupportURL=https://tu-dominio-ejemplo.com/soporte
