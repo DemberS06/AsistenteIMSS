@@ -5,23 +5,19 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 
 from tools.browser import BrowserTools
-from tools.pdf import PDFTools
-from tools.file import FileTools
+from tools.file import move_file
+from config import IMSS_TI_URL
 
 
 class IMSSTiService:
 
     def __init__(
         self,
-        browser: BrowserTools,
-        pdf_tools: PDFTools,
-        file_tools: FileTools,
-        base_url: str,
+        base_url: str = IMSS_TI_URL,
         default_timeout: int = 10,
+        #browser: BrowserTools = BrowserTools(),
     ):
-        self.browser = browser
-        self.pdf_tools = pdf_tools
-        self.file_tools = file_tools
+        #self.browser = BrowserTools()
         self.base_url = base_url
         self.default_timeout = default_timeout
 
@@ -210,7 +206,7 @@ class IMSSTiService:
 
             temp_path = self.download_pdfs()
 
-            final_path = self.file_tools.move_file(temp_path, target_folder)
+            final_path = move_file(temp_path, target_folder)
 
             return final_path
 

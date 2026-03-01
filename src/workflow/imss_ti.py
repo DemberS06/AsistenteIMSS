@@ -5,15 +5,14 @@ from typing import Optional
 
 from tools.excel import ExcelTools
 from services.imss_ti import IMSSTiService
-from services.whatsapp_web import WhatsAppManager
-from tools.browser import WebManager
+from services.whatsapp_web import WhatsAppService
+from tools.browser import BrowserTools
 
 
 class IMSSTiWorkflow:
 
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
-
         # Estado Excel
         self.excel: Optional[ExcelTools] = None
         self.current_index: int = 0
@@ -21,20 +20,10 @@ class IMSSTiWorkflow:
         # Configuración
         self.download_folder: Optional[str] = None
         self.global_pdf_path: Optional[str] = None
+    
+        self.imss = IMSSTiService()
 
-        # Infraestructura
-        self.web = WebManager(
-            headless=False,
-            temp_download_dir=os.path.join(data_dir, "_tmp_downloads")
-        )
-
-        self.imss = IMSSTiService(self.web)
-
-        self.whatsapp = WhatsAppManager(
-            webmanager=self.web,
-            profile_dir=os.path.join(data_dir, "whatsapp_profile"),
-            headless=False
-        )
+        self.whatsapp = WhatsAppService()
 
     # =========================
     # EXCEL

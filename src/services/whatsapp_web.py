@@ -15,7 +15,7 @@ class WhatsAppService:
 
     def __init__(
         self,
-        browser: BrowserTools,
+        browser: BrowserTools = BrowserTools(),
         qr_screenshot_path: str = "whatsapp_qr.png",
         default_timeout: int = 10,
     ):
