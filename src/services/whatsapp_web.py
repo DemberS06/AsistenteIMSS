@@ -35,10 +35,10 @@ class WhatsAppService:
 
         self.browser.go_to(self.URL)
 
-        if self._is_logged_in(timeout=5):
+        if self._is_logged_in(timeout=50):
             return
 
-        self.browser.screenshot(self.qr_screenshot_path)
+        #self.browser.screenshot(self.qr_screenshot_path)
         raise TimeoutException(
             f"No active session. Scan QR at: {self.qr_screenshot_path}"
         )

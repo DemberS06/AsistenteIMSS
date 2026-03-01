@@ -31,6 +31,7 @@ class IMSSTiWorkflow:
 
     def load_excel(self, path: str):
         self.excel = ExcelTools(path)
+        self.excel.load()
         self.current_index = 0
         return self.get_current_client()
 
@@ -133,7 +134,10 @@ class IMSSTiWorkflow:
     # =========================
 
     def open_whatsapp(self):
-        self.whatsapp.start()
+        try: 
+            self.whatsapp.start_session()
+        except Exception:
+            pass
 
     def send_whatsapp_current_client(self, message_text: str):
         self._ensure_excel()

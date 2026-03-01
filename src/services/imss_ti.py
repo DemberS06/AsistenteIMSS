@@ -15,9 +15,9 @@ class IMSSTiService:
         self,
         base_url: str = IMSS_TI_URL,
         default_timeout: int = 10,
-        #browser: BrowserTools = BrowserTools(),
+        browser: BrowserTools = BrowserTools(),
     ):
-        #self.browser = BrowserTools()
+        self.browser = browser
         self.base_url = base_url
         self.default_timeout = default_timeout
 
