@@ -16,7 +16,7 @@ def file_exists(path: Path) -> bool:
 
 
 def delete_file(path: Path) -> None:
-    if not path.exist:
+    if not path.exists():
         raise FileNotFoundError(f"No existe el archivo: {path}")
     
     try:
@@ -25,7 +25,7 @@ def delete_file(path: Path) -> None:
         raise OSError(f"No se pudo eliminar el archivo: {path}") from e
 
 
-def move_file(source: Path, destination: Path) -> bool:
+def move_file(source: Path, destination: Path):
     if not source.exists():
         raise FileNotFoundError(f"No existe el archivo origen: {source}")
     try:
@@ -39,7 +39,7 @@ def move_file(source: Path, destination: Path) -> bool:
         raise OSError(f"No se pudo mover el archivo de {source} a {destination}") from e
 
 
-def copy_file(source: Path, destination: Path) -> bool:
+def copy_file(source: Path, destination: Path):
     if not source.exists():
         raise FileNotFoundError(f"No existe el archivo origen: {source}")
     try:
