@@ -236,6 +236,28 @@ class BrowserTools:
         self._driver.add_cookie(cookie_dict)
 
     # =====================
+    # frames
+    # =====================
+
+    def switch_to_frame(self, by: By | None = None, value: str | None = None, element=None, timeout: int = 10):
+        self._require_driver()
+
+        if element is None:
+            if by is None or value is None:
+                raise ValueError("Debe proporcionar element o by/value para switch_to_frame().")
+            element = self.wait_for(by, value, state="presence", timeout=timeout)
+
+        self._driver.switch_to.frame(element)
+
+    def switch_to_default(self) -> None:
+        self._require_driver()
+        self._driver.switch_to.default_content()
+
+    def switch_to_parent(self) -> None:
+        self._require_driver()
+        self._driver.switch_to.parent_frame()
+
+    # =====================
     # alerts
     # =====================
 
