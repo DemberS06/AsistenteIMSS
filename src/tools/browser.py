@@ -56,6 +56,9 @@ class BrowserTools:
                 "download.default_directory": self.download_dir,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
+                "plugins.always_open_pdf_externally": True,
+                "profile.default_content_setting_values.automatic_downloads": 1,
+                "profile.default_content_settings.popups": 0,
             }
             options.add_experimental_option("prefs", prefs)
 
