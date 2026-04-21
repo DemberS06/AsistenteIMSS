@@ -1,3 +1,4 @@
+# config.py
 import os
 
 def _user_data_dir():

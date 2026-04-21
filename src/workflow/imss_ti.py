@@ -144,8 +144,8 @@ class IMSSTiWorkflow:
 
         client = self.get_current_client()
 
-        phone = client.get("Numero")
-        pdf_path = client.get("RutaPDF") or self.global_pdf_path
+        phone = client.get("NUMERO")
+        pdf_path = client.get("PDF") or self.global_pdf_path
 
         self.whatsapp.open_chat(phone)
         self.whatsapp.send_message(message_text)

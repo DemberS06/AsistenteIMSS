@@ -94,7 +94,9 @@ class ExcelTools:
             raise IndexError("Índice fuera de rango.")
 
         self.current_index = index
-        return self.df.iloc[index].to_dict()
+        row = self.df.iloc[index].to_dict()
+
+        return {k: self._to_string(v) for k, v in row.items()}  
 
     def next_row(self) -> dict | None:
         if self.df is None:
@@ -209,3 +211,32 @@ class ExcelTools:
     def __repr__(self):
         rows = 0 if self.df is None else len(self.df)
         return f"<ExcelTools path={self.path} rows={rows} idx={self.current_index}>"
+    
+    def _to_string(self, value) -> str:
+        if value is None:
+            return ""
+
+        # pandas NaN
+        try:
+            import pandas as pd
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+
+        # float tipo 123.0 -> "123"
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            return str(value)
+
+        # int
+        if isinstance(value, int):
+            return str(value)
+
+        # bool
+        if isinstance(value, bool):
+            return "1" if value else "0"
+
+        # fallback
+        return str(value).strip()

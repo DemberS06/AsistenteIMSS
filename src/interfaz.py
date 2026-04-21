@@ -319,24 +319,24 @@ class Interfaz(QWidget):
     # ======================================================
 
     def _fill_form(self, client: dict):
-        self.name_line.setText(client.get("Nombre", ""))
-        self.number_line.setText(client.get("Numero", ""))
+        self.name_line.setText(client.get("CLIENTE", ""))
+        self.number_line.setText(client.get("NUMERO", ""))
         self.curp_line.setText(client.get("CURP", ""))
         self.rfc_line.setText(client.get("RFC", ""))
         self.nss_line.setText(client.get("NSS", ""))
-        self.email_line.setText(client.get("Email", ""))
+        self.email_line.setText(client.get("CORREO", ""))
         self.pdf_dir_label.setText(
-            f"Dirección de PDF: {client.get('RutaPDF', '(ninguna)')}"
+            f"Dirección de PDF: {client.get('PDF', '(ninguna)')}"
         )
 
     def _collect_data(self) -> dict:
         return {
-            "Nombre": self.name_line.text(),
-            "Numero": self.number_line.text(),
+            "NOMBRE": self.name_line.text(),
+            "NUMERO": self.number_line.text(),
             "CURP": self.curp_line.text(),
             "RFC": self.rfc_line.text(),
             "NSS": self.nss_line.text(),
-            "Email": self.email_line.text(),
+            "CORREO": self.email_line.text(),
         }
     
 if __name__ == "__main__":
