@@ -1,4 +1,5 @@
 # tools/excel.py
+import os
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -45,6 +46,7 @@ class ExcelTools:
 
         while True:
             fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=folder)
+            os.close(fd)                          # cerrar fd antes de tocar el archivo
             Path(tmp_path).unlink(missing_ok=True)
 
             try:
