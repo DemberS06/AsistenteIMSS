@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-from selenium.webdriver.common.by import By
-
 from config import IMSS_TI_URL
 from tools.browser import BrowserTools
 from tools.file import move_file
@@ -47,7 +45,7 @@ class IMSSTiService:
     def open_page(self) -> None:
         try:
             self.browser.go_to(self.base_url)
-            self.browser.wait_for(By.TAG_NAME, "body", timeout=self.default_timeout)
+            self.browser.wait_for("tag", "body", timeout=self.default_timeout)
         except Exception as e:
             raise RuntimeError(f"[open_page] {e}")
 
@@ -58,9 +56,9 @@ class IMSSTiService:
     def get_captcha_image(self, element_id: str = "captchaImg") -> bytes:
         try:
             element = self.browser.wait_for(
-                By.ID, element_id, state="visible", timeout=self.default_timeout
+                "id", element_id, state="visible", timeout=self.default_timeout
             )
-            if element.size["width"] == 0:
+            if self.browser.get_size(element).get("width", 0) == 0:
                 raise RuntimeError("Captcha rendered with zero size.")
             return element.screenshot_as_png
         except Exception as e:
@@ -73,13 +71,13 @@ class IMSSTiService:
     def fill_form(self, fields: Dict[str, str]) -> None:
         try:
             for field_id, value in fields.items():
-                self.browser.type(value, by=By.ID, value=field_id, clear=True)
+                self.browser.type(value, by="id", value=field_id, clear=True)
         except Exception as e:
             raise RuntimeError(f"[fill_form] {e}")
 
     def submit_form(self) -> None:
         try:
-            self.browser.click(By.ID, "continuar")
+            self.browser.click("id", "continuar")
         except Exception as e:
             raise RuntimeError(f"[submit_form] {e}")
 
@@ -88,8 +86,8 @@ class IMSSTiService:
             error_ids = ["errorCurp", "errorRfc", "errorNss", "errorEmail"]
             errors = {}
             for eid in error_ids:
-                if self.browser.exists(By.ID, eid, timeout=1):
-                    text = self.browser.get_text(By.ID, eid).strip()
+                if self.browser.exists("id", eid, timeout=1):
+                    text = self.browser.get_text("id", eid).strip()
                     if text:
                         errors[eid] = text
             return errors
@@ -127,16 +125,16 @@ class IMSSTiService:
                 "guarda",
             ]
             for btn_id in sequence:
-                if not self.browser.exists(By.ID, btn_id, timeout=2):
+                if not self.browser.exists("id", btn_id, timeout=2):
                     raise RuntimeError(f"Botón esperado no encontrado: '{btn_id}'")
-                self.browser.click(By.ID, btn_id)
+                self.browser.click("id", btn_id)
         except Exception as e:
             raise RuntimeError(f"[complete_registration] {e}")
 
     def register(self, fields: Dict[str, str]) -> None:
         try:
             self.process_form(fields)
-            if self.browser.exists(By.ID, "mensajeYaRegistrado", timeout=2):
+            if self.browser.exists("id", "mensajeYaRegistrado", timeout=2):
                 raise RuntimeError("El trabajador ya está registrado.")
             self.complete_registration()
         except Exception as e:
@@ -152,7 +150,7 @@ class IMSSTiService:
         click_count: int = 2,
     ) -> str:
         try:
-            icons = self.browser.find_all(By.CSS_SELECTOR, click_selector)
+            icons = self.browser.find_all_css(click_selector)
             if not icons:
                 raise RuntimeError("No se encontraron iconos de PDF en la página.")
             for i in range(min(click_count, len(icons))):
@@ -176,8 +174,9 @@ class IMSSTiService:
                 raise RuntimeError("No se definió carpeta de destino.")
             self.register(fields)
             temp_path = self.download_pdfs()
-            final_path = move_file(Path(temp_path), Path(target_folder) / Path(temp_path).name)
-            return str(final_path)
+            dest = Path(target_folder) / Path(temp_path).name
+            move_file(Path(temp_path), dest)
+            return str(dest)
         except Exception as e:
             raise RuntimeError(f"[register_and_download] {e}")
 
@@ -192,7 +191,8 @@ class IMSSTiService:
                 raise RuntimeError("No se definió carpeta de destino.")
             self.process_form(fields)
             temp_path = self.download_pdfs()
-            final_path = move_file(Path(temp_path), Path(target_folder) / Path(temp_path).name)
-            return str(final_path)
+            dest = Path(target_folder) / Path(temp_path).name
+            move_file(Path(temp_path), dest)
+            return str(dest)
         except Exception as e:
             raise RuntimeError(f"[download_pdf_only] {e}")
