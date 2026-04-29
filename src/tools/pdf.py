@@ -1,6 +1,7 @@
 # tools/pdf.py
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
 from typing import Iterable
@@ -95,27 +96,134 @@ def _get_pages_text(path: Path) -> list[str]:
 
 
 # ─────────────────────────────────────────────────────────────
-# Búsqueda de mensaje por nombre de cliente
+# Normalización de texto
 # ─────────────────────────────────────────────────────────────
 
 def _normalize(s: str) -> str:
+    """Normaliza texto: sin acentos, minúsculas"""
     s = unicodedata.normalize("NFD", s)
     return "".join(ch for ch in s if unicodedata.category(ch) != "Mn").lower()
 
+def normalize_paragraph_breaks(text: str) -> str:
+    """
+    Normaliza los saltos de línea en el texto extraído de PDF:
+    
+    - Une líneas que son parte del mismo párrafo (saltos shift+enter)
+    - Mantiene separación entre párrafos verdaderos (líneas vacías)
+    - Preserva listas y formato estructurado (BANCO:, NÚMERO:, etc.)
+    """
+    if not text or not text.strip():
+        return ""
+    
+    lines = text.split('\n')
+    
+    # Patrones que indican que una línea debe estar SOLA (no unir con anterior/siguiente)
+    standalone_patterns = [
+        r'^(BANCO|NÚMERO|CUENTA|NOMBRE|TARJETA|CLABE):',  # Campos estructurados
+        r'^\d+\.$',  # Números con punto al final (ej: "65509866769.")
+    ]
+    
+    # Patrones que terminan un párrafo definitivamente
+    hard_end_patterns = [
+        r'[.!?]$',  # Puntuación fuerte
+    ]
+    
+    # Patrones que inician un nuevo párrafo
+    new_paragraph_patterns = [
+        r'^[¡¿⚠]',  # Signos especiales de inicio
+    ]
+    
+    def is_standalone_line(line: str) -> bool:
+        """Línea que debe estar sola (datos bancarios, etc.)"""
+        for pattern in standalone_patterns:
+            if re.match(pattern, line):
+                return True
+        return False
+    
+    def ends_paragraph(line: str) -> bool:
+        """Línea que termina un párrafo"""
+        for pattern in hard_end_patterns:
+            if re.search(pattern, line):
+                return True
+        return False
+    
+    def starts_new_paragraph(line: str) -> bool:
+        """Línea que inicia un nuevo párrafo"""
+        for pattern in new_paragraph_patterns:
+            if re.match(pattern, line):
+                return True
+        return False
+    
+    # Procesar líneas
+    result_lines = []
+    current_paragraph = []
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Línea vacía -> cerrar párrafo actual y agregar separación
+        if not stripped:
+            if current_paragraph:
+                result_lines.append(' '.join(current_paragraph))
+                current_paragraph = []
+            # Agregar línea vacía solo si no es la primera o si ya hay contenido
+            if result_lines:
+                result_lines.append('')
+            continue
+        
+        # Línea standalone (BANCO:, NÚMERO:, etc.) -> cerrar párrafo y agregar sola
+        if is_standalone_line(stripped):
+            if current_paragraph:
+                result_lines.append(' '.join(current_paragraph))
+                current_paragraph = []
+            result_lines.append(stripped)
+            continue
+        
+        # Línea que inicia nuevo párrafo (¡, ⚠, etc.) -> cerrar anterior
+        if starts_new_paragraph(stripped):
+            if current_paragraph:
+                result_lines.append(' '.join(current_paragraph))
+                current_paragraph = []
+            current_paragraph.append(stripped)
+            continue
+        
+        # Agregar al párrafo actual
+        current_paragraph.append(stripped)
+        
+        # Si termina con puntuación fuerte -> cerrar párrafo
+        if ends_paragraph(stripped):
+            result_lines.append(' '.join(current_paragraph))
+            current_paragraph = []
+    
+    # Agregar último párrafo si quedó algo
+    if current_paragraph:
+        result_lines.append(' '.join(current_paragraph))
+    
+    # Unir y limpiar líneas vacías múltiples
+    result = '\n'.join(result_lines)
+    result = re.sub(r'\n{3,}', '\n\n', result)  # Max 2 saltos consecutivos
+    
+    return result.strip()
+
+def remove_first_line(text: str) -> str:
+    """
+    Elimina la primera línea del texto.
+    Útil para quitar el ID o saludo personalizado del mensaje.
+    """
+    if not text or not text.strip():
+        return ""
+    
+    lines = text.split('\n', 1)
+    if len(lines) <= 1:
+        return ""
+    
+    return lines[1].strip()
+
+# ─────────────────────────────────────────────────────────────
+# Búsqueda de mensaje por nombre de cliente
+# ─────────────────────────────────────────────────────────────
 
 def find_message_for_client(path: Path, client_name: str) -> dict:
-    """
-    Busca en el PDF la página que contiene el mensaje del cliente.
-
-    Estrategia (en orden):
-      1. Coincidencia exacta del nombre normalizado.
-      2. Coincidencia por apellido(s) (últimas dos palabras).
-      3. Coincidencia difusa con difflib.
-
-    Devuelve:
-      { "found": bool, "page_idx": int|None,
-        "text": str, "snippet": str, "errors": list[str] }
-    """
     result: dict = {
         "found": False, "page_idx": None,
         "text": "", "snippet": "", "errors": [],
@@ -176,4 +284,110 @@ def find_message_for_client(path: Path, client_name: str) -> dict:
     except Exception:
         pass
 
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# Búsqueda de mensaje por ID de cliente
+# ─────────────────────────────────────────────────────────────
+
+def find_message_by_id(path: Path, client_id: str) -> dict:
+    result: dict = {
+        "found": False,
+        "page_idx": None,
+        "text": "",
+        "snippet": "",
+        "errors": [],
+    }
+
+    print("id: "+client_id)
+
+    if not client_id or not str(client_id).strip():
+        result["errors"].append("ID de cliente vacío")
+        return result
+
+    if not path.exists():
+        result["errors"].append(f"PDF no existe: {path}")
+        return result
+
+    try:
+        pages = _get_pages_text(path)
+    except Exception as e:
+        result["errors"].append(str(e))
+        return result
+
+    # Normalizar el ID para comparación
+    id_search = str(client_id).strip().lower()
+
+    # Buscar en cada página
+    for i, page_text in enumerate(pages):
+        if not page_text.strip():
+            continue
+        
+        # Obtener la primera línea
+        first_line = page_text.split('\n', 1)[0].strip().lower()
+        
+        # Verificar si el ID está en la primera línea
+        if id_search in first_line:
+            print("data: "+id_search+"<->"+first_line)
+            result.update({
+                "found": True,
+                "page_idx": i,
+                "text": page_text.strip(),
+                "snippet": (page_text[:160] + "...") if len(page_text) > 160 else page_text.strip(),
+            })
+            return result
+
+    result["errors"].append(f"No se encontró mensaje con ID: {client_id}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# Función principal de extracción
+# ─────────────────────────────────────────────────────────────
+
+def extract_message(
+    pdf_path: Path,
+    identifier: str,
+    search_by: str = "name",
+    remove_first_line_flag: bool = False,
+    normalize_breaks: bool = True
+) -> dict:
+    result = {
+        "success": False,
+        "message": "",
+        "raw_message": "",
+        "page_idx": None,
+        "errors": []
+    }
+    
+    # Buscar mensaje según el método
+    if search_by == "id":
+        search_result = find_message_by_id(pdf_path, identifier)
+    else:  # "name"
+        search_result = find_message_for_client(pdf_path, identifier)
+    
+    if not search_result["found"]:
+        result["errors"] = search_result["errors"]
+        return result
+    
+    # Mensaje encontrado
+    raw_message = search_result["text"]
+    result["raw_message"] = raw_message
+    result["page_idx"] = search_result["page_idx"]
+    
+    # Procesar mensaje
+    processed = raw_message
+    
+    # 1. Eliminar primera línea si se solicita
+    if remove_first_line_flag:
+        processed = remove_first_line(processed)
+    
+    # 2. Normalizar párrafos
+    if normalize_breaks:
+        processed = normalize_paragraph_breaks(processed)
+    
+    result["message"] = processed
+    result["success"] = True
+    
     return result

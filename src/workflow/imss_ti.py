@@ -96,15 +96,35 @@ class IMSSTiWorkflow:
     def get_message_for_client(
         self, trabajador: Trabajador, pdf_path: str
     ) -> Mensaje:
-        """
-        Extrae el mensaje del trabajador desde el PDF global indicado.
-        pdf_path: ruta seleccionada por el usuario en la UI (sesión).
-        """
+        from tools.pdf import extract_message
+        
         path = Path(pdf_path)
-        result = find_message_for_client(path, trabajador.cliente)
+        result = None
+        
+        # 1. Intentar buscar por ID (si existe en el trabajador)
+        if hasattr(trabajador, 'id') and trabajador.id:
+            result = extract_message(
+                pdf_path=path,
+                identifier=str(trabajador.id),
+                search_by="id",
+                remove_first_line_flag=True,  # Eliminar ID
+                normalize_breaks=True
+            )
+        
+        # 2. Si no encontró por ID o no tiene ID, buscar por nombre
+        if not result or not result.get("success"):
+            result = extract_message(
+                pdf_path=path,
+                identifier=trabajador.cliente,
+                search_by="name",
+                remove_first_line_flag=False,  
+                normalize_breaks=True
+            )
+        
+        # 3. Devolver resultado
         return Mensaje(
-            texto      = result.get("text", ""),
-            encontrado = result.get("found", False),
+            texto      = result.get("message", ""),      # ⚠️ Cambiado de "text" a "message"
+            encontrado = result.get("success", False),   # ⚠️ Cambiado de "found" a "success"
             page_idx   = result.get("page_idx") if result.get("page_idx") is not None else -1,
             pdf_path   = str(path),
         )
