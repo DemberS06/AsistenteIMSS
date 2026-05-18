@@ -1,6 +1,8 @@
 # models/trabajador.py
+from __future__ import annotations
 from dataclasses import dataclass
 
+from config import EXCEL_COLUMNS_TI
 
 @dataclass
 class Trabajador:
@@ -20,7 +22,7 @@ class Trabajador:
     # ----------------------------------------------------------------
 
     @classmethod
-    def from_row(cls, row: dict) -> "Trabajador":
+    def from_row(cls, row: dict) -> Trabajador:
         return cls(
             id          = row.get("ID",          ""),
             cliente     = row.get("CLIENTE",     ""),
@@ -49,7 +51,6 @@ class Trabajador:
         }
 
     def to_imss_fields(self, captcha: str) -> dict:
-        """Dict listo para rellenar el formulario del IMSS."""
         return {
             "curp":              self.curp,
             "rfc":               self.rfc,
@@ -58,3 +59,7 @@ class Trabajador:
             "emailConfirmacion": self.correo,
             "captcha":           captcha,
         }
+    
+    @staticmethod
+    def get_excel_columns() -> list[str]:
+        return EXCEL_COLUMNS_TI

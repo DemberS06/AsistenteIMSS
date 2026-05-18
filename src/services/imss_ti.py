@@ -7,7 +7,15 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List
 
-from config import IMSS_TI_URL
+from config import (
+    IMSS_TI_URL,
+    IMSS_TI_SELECTORS,
+    IMSS_TI_REQUIRED_FIELDS,
+    IMSS_TI_REGISTRATION_SEQUENCE,
+    DOWNLOAD_CONFIG,
+    TIMEOUTS,
+    DELAYS,
+)
 from tools.browser import BrowserTools
 from tools.file import move_file
 
@@ -17,10 +25,18 @@ class IMSSTiService:
     def __init__(
         self,
         base_url: str = IMSS_TI_URL,
-        default_timeout: int = 10,
+        default_timeout: int = None,
         browser: BrowserTools | None = None,
     ):
-        self.temp_download_dir = os.path.join(tempfile.gettempdir(), "imss_ti_downloads_temp")
+        # Usar timeout de config si no se especifica
+        if default_timeout is None:
+            default_timeout = TIMEOUTS["default"]
+        
+        # Usar nombre de carpeta temporal de config
+        self.temp_download_dir = os.path.join(
+            tempfile.gettempdir(), 
+            DOWNLOAD_CONFIG["temp_dir_name"]
+        )
         os.makedirs(self.temp_download_dir, exist_ok=True)
         
         self.browser = browser or BrowserTools(download_dir=self.temp_download_dir)
@@ -48,10 +64,13 @@ class IMSSTiService:
         except Exception as e:
             raise RuntimeError(f"[open_page] {e}")
 
-    def get_captcha_image(self, element_id: str = "captchaImg") -> bytes:
+    def get_captcha_image(self) -> bytes:
         try:
             element = self.browser.wait_for(
-                "id", element_id, state="visible", timeout=self.default_timeout
+                "id", 
+                IMSS_TI_SELECTORS["captcha_img"], 
+                state="visible", 
+                timeout=self.default_timeout
             )
             if self.browser.get_size(element).get("width", 0) == 0:
                 raise RuntimeError("Captcha rendered with zero size.")
@@ -67,12 +86,16 @@ class IMSSTiService:
             raise RuntimeError(f"[fill_form] {e}")
 
     def validate_field_errors(self) -> Dict[str, str]:
-        """Valida errores ANTES de submit"""
-        error_ids = ["errorCurp", "errorRfc", "errorNss", "errorEmail"]
+        error_ids = [
+            IMSS_TI_SELECTORS["error_curp"],
+            IMSS_TI_SELECTORS["error_rfc"],
+            IMSS_TI_SELECTORS["error_nss"],
+            IMSS_TI_SELECTORS["error_email"],
+        ]
         errors = {}
         for eid in error_ids:
             try:
-                if self.browser.exists("id", eid, timeout=1):
+                if self.browser.exists("id", eid, timeout=TIMEOUTS["element_check"]):
                     text = self.browser.get_text("id", eid).strip()
                     if text:
                         errors[eid] = text
@@ -82,16 +105,19 @@ class IMSSTiService:
 
     def submit_form(self) -> None:
         try:
-            self.browser.click("id", "continuar")
-            time.sleep(0.5)
+            self.browser.click("id", IMSS_TI_SELECTORS["continuar_button"])
+            time.sleep(DELAYS["after_submit"])
         except Exception as e:
             raise RuntimeError(f"[submit_form] {e}")
 
     def validate_form_error(self) -> None:
-        """Valida errorForm DESPUÉS de submit"""
         try:
-            if self.browser.exists("id", "errorForm", timeout=1):
-                text = self.browser.get_text("id", "errorForm").strip()
+            if self.browser.exists(
+                "id", 
+                IMSS_TI_SELECTORS["error_form"], 
+                timeout=TIMEOUTS["element_check"]
+            ):
+                text = self.browser.get_text("id", IMSS_TI_SELECTORS["error_form"]).strip()
                 if text:
                     raise RuntimeError(text)
         except RuntimeError:
@@ -101,7 +127,8 @@ class IMSSTiService:
 
     def process_form(self, fields: Dict[str, str]) -> None:
         try:
-            required = ["curp", "nss", "email", "emailConfirmacion", "captcha"]
+            # Usar campos requeridos de config
+            required = IMSS_TI_REQUIRED_FIELDS
             for field in required:
                 if not fields.get(field, "").strip():
                     raise RuntimeError(f"Campo requerido vacío: '{field}'")
@@ -125,16 +152,11 @@ class IMSSTiService:
 
     def complete_registration(self) -> None:
         try:
-            sequence = [
-                "submitContinuar",
-                "continuar",
-                "checkRenovacionAut",
-                "terminos",
-                "continuar",
-                "guarda",
-            ]
+            # Usar secuencia de config
+            sequence = IMSS_TI_REGISTRATION_SEQUENCE
+            
             for btn_id in sequence:
-                if not self.browser.exists("id", btn_id, timeout=2):
+                if not self.browser.exists("id", btn_id, timeout=TIMEOUTS["button_sequence"]):
                     raise RuntimeError(f"Botón esperado no encontrado: '{btn_id}'")
                 self.browser.click("id", btn_id)
         except Exception as e:
@@ -143,67 +165,94 @@ class IMSSTiService:
     def register(self, fields: Dict[str, str]) -> None:
         try:
             self.process_form(fields)
-            if self.browser.exists("id", "mensajeYaRegistrado", timeout=2):
+            
+            # Verificar si ya está registrado
+            if self.browser.exists(
+                "id", 
+                IMSS_TI_SELECTORS["mensaje_ya_registrado"], 
+                timeout=TIMEOUTS["button_sequence"]
+            ):
                 raise RuntimeError("El trabajador ya está registrado.")
+            
             self.complete_registration()
         except Exception as e:
             raise RuntimeError(f"[register] {e}")
 
-    def _wait_for_all_downloads(self, timeout: int = 30) -> bool:
-        """Espera a que TODOS los archivos terminen de descargar"""
+    def _wait_for_all_downloads(self, timeout: int = None) -> bool:
+        if timeout is None:
+            timeout = TIMEOUTS["download"]
+        
         end_time = time.time() + timeout
         while time.time() < end_time:
             try:
                 entries = os.listdir(self.temp_download_dir)
-                still_downloading = any(name.endswith(".crdownload") for name in entries)
+                still_downloading = any(
+                    name.endswith(DOWNLOAD_CONFIG["crdownload_extension"]) 
+                    for name in entries
+                )
                 if not still_downloading:
                     return True
             except FileNotFoundError:
                 pass
-            time.sleep(0.25)
+            time.sleep(DELAYS["download_poll"])
         return False
 
     def _get_temp_files(self) -> List[str]:
-        """Lista TODOS los archivos descargados en temp"""
         try:
             entries = os.listdir(self.temp_download_dir)
-            return [f for f in entries if not f.endswith(".crdownload")]
+            return [
+                f for f in entries 
+                if not f.endswith(DOWNLOAD_CONFIG["crdownload_extension"])
+            ]
         except FileNotFoundError:
             return []
 
     def download_pdfs(
         self,
-        click_selector: str = "span.glyphicon.glyphicon-file",
-        click_count: int = 2,
+        click_selector: str = None,
+        click_count: int = None,
     ) -> List[str]:
-        """Descarga PDFs y retorna lista de rutas en temp"""
+        # Usar valores de config si no se especifican
+        if click_selector is None:
+            click_selector = IMSS_TI_SELECTORS["pdf_icons"]
+        if click_count is None:
+            click_count = DOWNLOAD_CONFIG["pdf_click_count"]
+        
         try:
-            if self.browser.exists("id", "submitCancelar", timeout=1):
+            # Verificar si el trabajador está registrado
+            if self.browser.exists(
+                "id", 
+                IMSS_TI_SELECTORS["submit_cancelar"], 
+                timeout=TIMEOUTS["element_check"]
+            ):
                 raise RuntimeError("El trabajador no ha sido registrado. Usa 'Registrar cliente' primero.")
             
             icons = self.browser.find_all_css(click_selector)
             if not icons:
                 raise RuntimeError("No se encontraron iconos de PDF en la página.")
             
+            # Hacer clic en los iconos
             for i in range(min(click_count, len(icons))):
                 try:
                     icons[i].click()
-                    time.sleep(0.2)
+                    time.sleep(DELAYS["pdf_icon_click"])
                 except Exception:
                     try:
                         icons = self.browser.find_all_css(click_selector)
                         if len(icons) > i:
                             icons[i].click()
-                            time.sleep(0.2)
+                            time.sleep(DELAYS["pdf_icon_click"])
                     except Exception:
                         pass
             
-            ok = self._wait_for_all_downloads(timeout=30)
+            # Esperar descargas
+            ok = self._wait_for_all_downloads()
             if not ok:
                 raise RuntimeError("Timeout esperando descargas.")
             
-            time.sleep(0.5)
+            time.sleep(DELAYS["download_complete"])
             
+            # Obtener archivos descargados
             temp_files = self._get_temp_files()
             if not temp_files:
                 raise RuntimeError("No se detectaron archivos descargados.")
@@ -231,9 +280,10 @@ class IMSSTiService:
                 move_file(Path(temp_path), dest)
                 moved_paths.append(str(dest))
             
+            # Cerrar sesión
             try:
-                self.browser.click("id", "salir")
-                time.sleep(1.0)
+                self.browser.click("id", IMSS_TI_SELECTORS["salir_button"])
+                time.sleep(DELAYS["browser_exit"])
             except Exception:
                 pass
             
@@ -260,9 +310,10 @@ class IMSSTiService:
                 move_file(Path(temp_path), dest)
                 moved_paths.append(str(dest))
             
+            # Cerrar sesión
             try:
-                self.browser.click("id", "salir")
-                time.sleep(1.0)
+                self.browser.click("id", IMSS_TI_SELECTORS["salir_button"])
+                time.sleep(DELAYS["browser_exit"])
             except Exception:
                 pass
             

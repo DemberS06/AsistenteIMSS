@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional
 
-from config import WA_URL, WA_SELECTORS
+from config import WHATSAPP_URL, WHATSAPP_SELECTORS, TIMEOUTS, DELAYS
 from tools.browser import BrowserTools
 
 
@@ -14,8 +14,12 @@ class WhatsAppService:
     def __init__(
         self,
         browser: BrowserTools | None = None,
-        default_timeout: int = 10,
+        default_timeout: int = None,
     ):
+        # Usar timeout de config si no se especifica
+        if default_timeout is None:
+            default_timeout = TIMEOUTS["default"]
+        
         self.browser = browser or BrowserTools()
         self.default_timeout = default_timeout
         self._chat_open = False
@@ -27,15 +31,14 @@ class WhatsAppService:
     def start_session(self) -> None:
         if not self.browser.is_active():
             self.browser.start()
-        self.browser.go_to(WA_URL)
-        self.browser.wait_for("tag", "body", timeout=30)
+        self.browser.go_to(WHATSAPP_URL)
+        self.browser.wait_for("tag", "body", timeout=TIMEOUTS["whatsapp_login"])
 
     def close_session(self) -> None:
         self.browser.close()
         self._chat_open = False
 
     def is_logged_in(self) -> bool:
-        """URL OR cookies OR DOM — cualquiera de las tres basta."""
         try:
             driver = self.browser.driver
             if driver is None:
@@ -63,12 +66,11 @@ class WhatsAppService:
 
             dom_ok = False
             try:
-                dom_checks = [
-                    "div[contenteditable='true'][data-tab='3']",
-                    "div[contenteditable='true'][data-tab='10']",
-                    "div[data-testid='pane-side']",
-                    "div[data-testid='conversation-panel']",
-                ]
+                # Usar selectores de config para verificar login
+                dom_checks = (
+                    WHATSAPP_SELECTORS["search_inputs"] + 
+                    WHATSAPP_SELECTORS["conversation_panel"]
+                )
                 for sel in dom_checks:
                     if self.browser.find_all_css(sel):
                         dom_ok = True
@@ -109,7 +111,8 @@ class WhatsAppService:
 
     def _conversation_is_open(self, search_field=None) -> bool:
         try:
-            for sel in WA_SELECTORS["conversation_panel"]:
+            # Usar selectores de config
+            for sel in WHATSAPP_SELECTORS["conversation_panel"]:
                 if self.browser.find_all_css(sel):
                     return True
 
@@ -128,7 +131,8 @@ class WhatsAppService:
         return False
 
     def _find_chat_input(self):
-        for sel in WA_SELECTORS["chat_input"]:
+        # Usar selectores de config
+        for sel in WHATSAPP_SELECTORS["chat_input"]:
             try:
                 boxes = self.browser.find_all_css(sel)
                 for b in boxes:
@@ -161,11 +165,13 @@ class WhatsAppService:
 
     def _open_chat_by_search(self, phone: str) -> bool:
         search_field = None
-        end = time.time() + 4.0
+        end = time.time() + TIMEOUTS["search_field"]
+        
+        # Buscar campo de búsqueda usando selectores de config
         while time.time() < end and search_field is None:
-            search_field = self.browser.find_first(WA_SELECTORS["search_inputs"])
+            search_field = self.browser.find_first(WHATSAPP_SELECTORS["search_inputs"])
             if search_field is None:
-                time.sleep(0.2)
+                time.sleep(DELAYS["whatsapp_doc_click"])
 
         if search_field is None:
             return False
@@ -178,15 +184,16 @@ class WhatsAppService:
                 self.browser.run_js("arguments[0].click();", search_field)
 
             self.browser.clear_and_type(search_field, phone)
-            time.sleep(0.6)
+            time.sleep(DELAYS["whatsapp_search"])
 
             self.browser.send_keys_to(search_field, "\n")
 
-            end2 = time.time() + 3.0
+            # Esperar que abra la conversación
+            end2 = time.time() + TIMEOUTS["search_results"]
             while time.time() < end2:
                 if self._conversation_is_open(search_field):
                     return True
-                time.sleep(0.2)
+                time.sleep(DELAYS["whatsapp_doc_click"])
 
             # ENTER no abrió — clicar primer resultado
             for result_sel in ("div[role='option']", "div[role='button'][data-testid]"):
@@ -194,7 +201,7 @@ class WhatsAppService:
                     els = self.browser.find_all_css(result_sel)
                     if els:
                         els[0].click()
-                        time.sleep(0.6)
+                        time.sleep(DELAYS["whatsapp_search"])
                         if self._conversation_is_open(search_field):
                             return True
                 except Exception:
@@ -207,10 +214,14 @@ class WhatsAppService:
 
     def _open_chat_by_url(self, phone: str) -> bool:
         try:
-            self.browser.go_to(f"{WA_URL}send?phone={phone}")
-            self.browser.wait_until(lambda d: self.is_logged_in(), timeout=8)
-            time.sleep(0.8)
-            end = time.time() + 5.0
+            self.browser.go_to(f"{WHATSAPP_URL}send?phone={phone}")
+            self.browser.wait_until(
+                lambda d: self.is_logged_in(), 
+                timeout=TIMEOUTS["whatsapp_url"]
+            )
+            time.sleep(DELAYS["whatsapp_clip"])
+            
+            end = time.time() + TIMEOUTS["whatsapp_chat_open"]
             while time.time() < end:
                 if self._conversation_is_open():
                     return True
@@ -246,7 +257,7 @@ class WhatsAppService:
                 input_box.send_keys("\ue008\ue006")  # SHIFT+ENTER
 
         input_box.send_keys("\n")
-        time.sleep(0.35)
+        time.sleep(DELAYS["whatsapp_enter"])
 
     # ─────────────────────────────────────────
     # PDF
@@ -263,16 +274,17 @@ class WhatsAppService:
         abs_path = os.path.abspath(pdf_path)
 
         # 1. Abrir submenú con action_click (mantiene foco en navegador)
-        clip = self.browser.find_first(WA_SELECTORS["clip_button"])
+        clip = self.browser.find_first(WHATSAPP_SELECTORS["clip_button"])
         if clip is None:
             raise RuntimeError("No se encontró el botón de adjuntar archivo.")
 
         self.browser.action_click(clip)
-        time.sleep(0.8)
+        time.sleep(DELAYS["whatsapp_clip"])
 
         # 2. Clicar Document del submenú
         doc_clicked = False
-        end = time.time() + 5.0
+        end = time.time() + TIMEOUTS["whatsapp_chat_open"]
+        
         while time.time() < end and not doc_clicked:
             try:
                 for texto in ("Document", "Documento", "Fichier", "Datei"):
@@ -289,14 +301,15 @@ class WhatsAppService:
             except Exception:
                 pass
             if not doc_clicked:
-                time.sleep(0.2)
+                time.sleep(DELAYS["whatsapp_doc_click"])
 
         if not doc_clicked:
             raise RuntimeError("No se encontró la opción Document en el submenú.")
 
         # 3. Esperar input de documentos (accept="*", no imágenes)
         file_input = None
-        end = time.time() + 6.0
+        end = time.time() + TIMEOUTS["file_input"]
+        
         while time.time() < end:
             try:
                 all_inputs = self.browser.find_all_css("input[type='file']")
@@ -309,7 +322,7 @@ class WhatsAppService:
                 pass
             if file_input is not None:
                 break
-            time.sleep(0.2)
+            time.sleep(DELAYS["whatsapp_doc_click"])
 
         if file_input is None:
             raise RuntimeError("No apareció el input de documentos.")
@@ -325,14 +338,14 @@ class WhatsAppService:
                 raise RuntimeError(f"No se pudo adjuntar el PDF: {e}")
 
         # 5. Cerrar explorador de archivos con Escape del sistema
-        time.sleep(2.0)
+        time.sleep(DELAYS["whatsapp_file_attach"])
         self.browser.press_system_key("escape")
-        time.sleep(1.0)
+        time.sleep(DELAYS["whatsapp_escape"])
 
         # 6. Esperar preview y enviar con Enter
-        time.sleep(2.0)
+        time.sleep(DELAYS["whatsapp_send"])
         self.browser.press_enter()
-        time.sleep(1.0)
+        time.sleep(DELAYS["whatsapp_escape"])
 
     # ─────────────────────────────────────────
     # Flujo completo

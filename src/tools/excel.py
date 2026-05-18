@@ -7,12 +7,15 @@ import tempfile
 import shutil
 import time
 
+from config import TIMEOUTS
+
 
 class ExcelTools:
-    def __init__(self, path: str, has_header: bool = True, save_timeout: float = 10.0):
+    def __init__(self, path: str, has_header: bool = True, save_timeout: float = None):
         self.path = Path(path).resolve()
         self.has_header = has_header
-        self.save_timeout = float(save_timeout)
+        # Usar timeout de config.py si no se especifica
+        self.save_timeout = float(save_timeout) if save_timeout is not None else TIMEOUTS["default"]
         self.df: pd.DataFrame | None = None
         self.current_index: int = 0
 

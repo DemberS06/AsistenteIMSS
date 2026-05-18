@@ -11,6 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 
+from config import BROWSER_OPTIONS, DOWNLOAD_PREFS, TIMEOUTS
+
 
 # Mapeo de strings legibles a By de Selenium
 # Los services usan estos strings en lugar de importar By directamente
@@ -62,8 +64,12 @@ class BrowserTools:
         if self.headless:
             options.add_argument("--headless=new")
 
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-notifications")
+        # Usar constantes de config.py
+        if BROWSER_OPTIONS["start_maximized"]:
+            options.add_argument("--start-maximized")
+        
+        if BROWSER_OPTIONS["disable_notifications"]:
+            options.add_argument("--disable-notifications")
 
         if self.user_data_dir:
             options.add_argument(f"--user-data-dir={self.user_data_dir}")
@@ -72,13 +78,10 @@ class BrowserTools:
             options.add_argument(f"--profile-directory={self.profile_directory}")
 
         if self.download_dir:
+            # Usar constantes de config.py para preferencias de descarga
             prefs = {
                 "download.default_directory": self.download_dir,
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "plugins.always_open_pdf_externally": True,
-                "profile.default_content_setting_values.automatic_downloads": 1,
-                "profile.default_content_settings.popups": 0,
+                **DOWNLOAD_PREFS
             }
             options.add_experimental_option("prefs", prefs)
 
@@ -94,7 +97,6 @@ class BrowserTools:
 
     @property
     def driver(self) -> webdriver.Chrome | None:
-        """Expone el driver para casos que lo necesiten."""
         return self._driver
 
     # =====================
@@ -130,7 +132,6 @@ class BrowserTools:
         return self._driver.find_elements(_resolve_by(by), value)
 
     def find_first(self, selectors: list[str]) -> object | None:
-        """Primer elemento encontrado de la lista de selectores CSS."""
         self._require_driver()
         for sel in selectors:
             try:
@@ -142,17 +143,14 @@ class BrowserTools:
         return None
 
     def find_all_css(self, selector: str) -> list:
-        """Busca todos los elementos por selector CSS."""
         self._require_driver()
         return self._driver.find_elements(By.CSS_SELECTOR, selector)
 
     def find_all_xpath(self, xpath: str) -> list:
-        """Busca todos los elementos por XPath."""
         self._require_driver()
         return self._driver.find_elements(By.XPATH, xpath)
 
     def find_first_xpath(self, xpath: str) -> object | None:
-        """Primer elemento encontrado por XPath."""
         self._require_driver()
         try:
             els = self._driver.find_elements(By.XPATH, xpath)
@@ -161,7 +159,6 @@ class BrowserTools:
             return None
 
     def click_first(self, selectors: list[str]) -> bool:
-        """Clic en el primer elemento encontrado de la lista. Devuelve True si lo encontró."""
         el = self.find_first(selectors)
         if el is None:
             return False
@@ -175,7 +172,10 @@ class BrowserTools:
             except Exception:
                 return False
 
-    def exists(self, by: str | By, value: str, timeout: int = 3) -> bool:
+    def exists(self, by: str | By, value: str, timeout: int = None) -> bool:
+        if timeout is None:
+            timeout = TIMEOUTS["element_check"]
+        
         try:
             self.wait_for(by, value, state="presence", timeout=timeout)
             return True
@@ -186,8 +186,12 @@ class BrowserTools:
     # waits
     # =====================
 
-    def wait_for(self, by: str | By, value: str, state: str = "presence", timeout: int = 10):
+    def wait_for(self, by: str | By, value: str, state: str = "presence", timeout: int = None):
         self._require_driver()
+        
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+        
         resolved = _resolve_by(by)
         wait = WebDriverWait(self._driver, timeout)
 
@@ -202,16 +206,28 @@ class BrowserTools:
 
         raise ValueError(f"Estado de espera no soportado: {state}")
 
-    def wait_until(self, condition: Callable[[webdriver.Chrome], Any], timeout: int = 10):
+    def wait_until(self, condition: Callable[[webdriver.Chrome], Any], timeout: int = None):
         self._require_driver()
+        
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+        
         return WebDriverWait(self._driver, timeout).until(condition)
 
-    def wait_for_url_contains(self, text: str, timeout: int = 10) -> bool:
+    def wait_for_url_contains(self, text: str, timeout: int = None) -> bool:
         self._require_driver()
+        
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+        
         return WebDriverWait(self._driver, timeout).until(EC.url_contains(text))
 
-    def wait_for_text(self, by: str | By, value: str, text: str, timeout: int = 10) -> bool:
+    def wait_for_text(self, by: str | By, value: str, text: str, timeout: int = None) -> bool:
         self._require_driver()
+        
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+        
         resolved = _resolve_by(by)
         return WebDriverWait(self._driver, timeout).until(
             EC.text_to_be_present_in_element((resolved, value), text)
@@ -221,8 +237,11 @@ class BrowserTools:
     # interactions
     # =====================
 
-    def click(self, by: str | By | None = None, value: str | None = None, element=None, js: bool = False, timeout: int = 10):
+    def click(self, by: str | By | None = None, value: str | None = None, element=None, js: bool = False, timeout: int = None):
         self._require_driver()
+
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
 
         if element is None:
             if by is None or value is None:
@@ -235,7 +254,6 @@ class BrowserTools:
             element.click()
 
     def action_click(self, element) -> None:
-        """Clic con ActionChains — mantiene el foco en el navegador."""
         self._require_driver()
         ActionChains(self._driver).move_to_element(element).click().perform()
 
@@ -253,7 +271,6 @@ class BrowserTools:
         element.send_keys(text)
 
     def clear_and_type(self, element, text: str) -> None:
-        """Limpia el campo y escribe el texto."""
         try:
             element.clear()
         except Exception:
@@ -265,7 +282,6 @@ class BrowserTools:
     # =====================
 
     def press(self, *keys) -> None:
-        """Envía teclas dentro del navegador con ActionChains."""
         self._require_driver()
         actions = ActionChains(self._driver)
         for key in keys:
@@ -275,17 +291,14 @@ class BrowserTools:
         actions.perform()
 
     def press_enter(self) -> None:
-        """Envía Enter dentro del navegador."""
         from selenium.webdriver.common.keys import Keys
         self.press(Keys.ENTER)
 
     def press_system_key(self, key: str) -> None:
-        """Envía una tecla a nivel del sistema operativo (para ventanas nativas)."""
         import pyautogui
         pyautogui.press(key)
 
     def send_keys_to(self, element, *keys) -> None:
-        """Envía teclas directamente a un elemento."""
         element.send_keys(*keys)
 
     # =====================
@@ -313,21 +326,18 @@ class BrowserTools:
         return element.get_attribute(name)
 
     def get_element_attribute(self, element, name: str) -> str:
-        """Obtiene un atributo de un elemento ya encontrado."""
         try:
             return element.get_attribute(name) or ""
         except Exception:
             return ""
 
     def is_displayed(self, element) -> bool:
-        """Devuelve True si el elemento está visible en pantalla."""
         try:
             return element.is_displayed()
         except Exception:
             return False
 
     def get_size(self, element) -> dict:
-        """Devuelve el tamaño del elemento como dict {width, height}."""
         try:
             return element.size or {}
         except Exception:
@@ -348,7 +358,6 @@ class BrowserTools:
         self.run_js("arguments[0].focus();", element)
 
     def focus_and_scroll(self, element) -> None:
-        """Hace scroll al elemento y le da foco en un solo paso."""
         self.run_js(
             "arguments[0].scrollIntoView(true); arguments[0].focus();", element
         )
@@ -369,8 +378,11 @@ class BrowserTools:
     # frames
     # =====================
 
-    def switch_to_frame(self, by: str | By | None = None, value: str | None = None, element=None, timeout: int = 10):
+    def switch_to_frame(self, by: str | By | None = None, value: str | None = None, element=None, timeout: int = None):
         self._require_driver()
+
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
 
         if element is None:
             if by is None or value is None:
@@ -391,23 +403,27 @@ class BrowserTools:
     # alerts
     # =====================
 
-    def wait_for_alert(self, timeout: int = 10):
+    def wait_for_alert(self, timeout: int = None):
         self._require_driver()
+        
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+        
         return WebDriverWait(self._driver, timeout).until(EC.alert_is_present())
 
-    def accept_alert(self, timeout: int = 10) -> str:
+    def accept_alert(self, timeout: int = None) -> str:
         alert = self.wait_for_alert(timeout)
         text = alert.text
         alert.accept()
         return text
 
-    def dismiss_alert(self, timeout: int = 10) -> str:
+    def dismiss_alert(self, timeout: int = None) -> str:
         alert = self.wait_for_alert(timeout)
         text = alert.text
         alert.dismiss()
         return text
 
-    def get_alert_text(self, timeout: int = 10) -> str:
+    def get_alert_text(self, timeout: int = None) -> str:
         return self.wait_for_alert(timeout).text
 
     # =====================
@@ -417,13 +433,20 @@ class BrowserTools:
     def wait_for_download(
         self,
         filename_contains: str | None = None,
-        timeout: int = 30,
-        poll_interval: float = 0.5,
+        timeout: int = None,
+        poll_interval: float = None,
     ) -> str:
         self._require_driver()
 
         if not self.download_dir:
             raise ValueError("No se configuró download_dir en BrowserTools.")
+
+        if timeout is None:
+            timeout = TIMEOUTS["download"]
+        
+        if poll_interval is None:
+            from config import DELAYS
+            poll_interval = DELAYS["download_poll"]
 
         import time
         from pathlib import Path
@@ -457,7 +480,6 @@ class BrowserTools:
         return self._driver is not None
 
     def same_element(self, el1, el2) -> bool:
-        """Devuelve True si dos elementos del DOM son el mismo nodo."""
         try:
             return self.run_js("return arguments[0] === arguments[1];", el1, el2)
         except Exception:
