@@ -1,4 +1,4 @@
-# interfaz.py
+# interfaz/ti.py
 from __future__ import annotations
 
 import os
@@ -51,11 +51,11 @@ sys.excepthook = _excepcion_no_manejada
 # Ventana principal
 # ──────────────────────────────────────────────────────────────
 
-class Interfaz(QWidget):
+class InterfazTI(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Asistente IMSS")
+        self.setWindowTitle("Asistente IMSS - Trabajadores Independientes")
         self.setGeometry(150, 80, 1200, 720)
 
         self.workflow = IMSSTiWorkflow(DATA_DIR)
@@ -528,6 +528,6 @@ class Interfaz(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = Interfaz()
+    window = InterfazTI()
     window.show()
     sys.exit(app.exec_())
