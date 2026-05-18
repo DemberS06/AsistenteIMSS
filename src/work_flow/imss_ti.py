@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import WHATSAPP_CONFIG, VALIDATION, EXCEL_COLUMNS_TI
-from models.trabajador import Trabajador
+from models.trabajador_ti import TrabajadorTI
 from models.mensaje import Mensaje
 from services.imss_ti import IMSSTiService
 from services.whatsapp_web import WhatsAppService
@@ -43,7 +43,7 @@ class IMSSTiWorkflow:
     # Excel / navegación
     # ─────────────────────────────────────────
 
-    def load_excel(self, path: str) -> Trabajador:
+    def load_excel(self, path: str) -> TrabajadorTI:
         self.excel = ExcelTools(path)
         self.excel.load()
         
@@ -54,36 +54,36 @@ class IMSSTiWorkflow:
         self.current_index = 0
         return self.get_current_client()
 
-    def get_current_client(self) -> Trabajador:
+    def get_current_client(self) -> TrabajadorTI:
         self._ensure_excel()
-        return Trabajador.from_row(self.excel.get_row(self.current_index))
+        return TrabajadorTI.from_row(self.excel.get_row(self.current_index))
 
-    def save_current_client(self, trabajador: Trabajador) -> None:
+    def save_current_client(self, trabajador: TrabajadorTI) -> None:
         self._ensure_excel()
         self.excel.update_row(self.current_index, trabajador.to_row())
         self.excel.save()
 
-    def create_new_client(self) -> Trabajador:
+    def create_new_client(self) -> TrabajadorTI:
         self._ensure_excel()
-        self.excel.add_row(Trabajador().to_row())
+        self.excel.add_row(TrabajadorTI().to_row())
         self.current_index = self.excel.row_count() - 1
         self.excel.save()
         return self.get_current_client()
 
-    def go_next(self) -> Trabajador:
+    def go_next(self) -> TrabajadorTI:
         """Navega al siguiente trabajador."""
         self._ensure_excel()
         if self.current_index < self.excel.row_count() - 1:
             self.current_index += 1
         return self.get_current_client()
 
-    def go_previous(self) -> Trabajador:
+    def go_previous(self) -> TrabajadorTI:
         self._ensure_excel()
         if self.current_index > 0:
             self.current_index -= 1
         return self.get_current_client()
 
-    def go_to(self, index: int) -> Trabajador:
+    def go_to(self, index: int) -> TrabajadorTI:
         self._ensure_excel()
         if 0 <= index < self.excel.row_count():
             self.current_index = index
@@ -102,7 +102,7 @@ class IMSSTiWorkflow:
     # Mensaje (PDF global de mensajes)
     # ─────────────────────────────────────────
 
-    def get_message_for_client(self, trabajador: Trabajador, pdf_path: str) -> Mensaje:
+    def get_message_for_client(self, trabajador: TrabajadorTI, pdf_path: str) -> Mensaje:
         path = Path(pdf_path)
         result = None
         

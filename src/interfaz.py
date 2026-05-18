@@ -15,7 +15,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
 from config import DATA_DIR
-from models.trabajador import Trabajador
+from models.trabajador_ti import TrabajadorTI
 from models.mensaje import Mensaje
 from work_flow.imss_ti import IMSSTiWorkflow
 
@@ -481,7 +481,7 @@ class Interfaz(QWidget):
     # Auxiliares UI
     # ──────────────────────────────────────────────────────────
 
-    def _fill_form(self, t: Trabajador):
+    def _fill_form(self, t: TrabajadorTI):
         self.name_line.setText(t.cliente)
         self.number_line.setText(t.numero)
         self.curp_line.setText(t.curp)
@@ -496,10 +496,10 @@ class Interfaz(QWidget):
         )
         self.word_preview.setPlainText("")
 
-    def _collect_form(self) -> Trabajador:
+    def _collect_form(self) -> TrabajadorTI:
         """Lee los campos del formulario y devuelve un Trabajador completo."""
         current = self.workflow.get_current_client()
-        return Trabajador(
+        return TrabajadorTI(
             id          = current.id,
             cliente     = self.name_line.text().strip(),
             numero      = self.number_line.text().strip(),
