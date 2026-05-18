@@ -11,7 +11,6 @@ from typing import Dict, List
 from config import (
     IMSS_M40_URL,
     IMSS_M40_SELECTORS,
-    IMSS_M40_REQUIRED_FIELDS,
     IMSS_M40_REGISTRATION_SEQUENCE,
     DOWNLOAD_CONFIG,
     TIMEOUTS,
@@ -44,7 +43,7 @@ class IMSSM40Service:
         
         self.temp_download_dir = os.path.join(
             tempfile.gettempdir(), 
-            "imss_m40_downloads_temp"  # Carpeta diferente para M40
+            "imss_m40_downloads_temp"
         )
         os.makedirs(self.temp_download_dir, exist_ok=True)
         
@@ -79,12 +78,10 @@ class IMSSM40Service:
 
     def get_captcha_image(self) -> bytes:
         """Obtiene la imagen del captcha."""
-        # TODO: Implementar cuando se conozca el selector del captcha M40
         try:
-            # Placeholder - ajustar selector cuando se implemente
             element = self.browser.wait_for(
                 "id", 
-                "captchaImg",  # TODO: Actualizar con selector real de M40
+                IMSS_M40_SELECTORS["captcha_img"],
                 state="visible", 
                 timeout=self.default_timeout
             )
@@ -108,30 +105,86 @@ class IMSSM40Service:
 
     def validate_field_errors(self) -> Dict[str, str]:
         """Valida errores de campos antes de submit."""
-        # TODO: Ajustar selectores según formulario M40
-        error_ids = [
-            "errorCurp",  # TODO: Actualizar con selectores reales de M40
-            "errorRfc",
-            "errorNss",
-            "errorEmail",
-        ]
+        error_selectors = {
+            "error_curp": IMSS_M40_SELECTORS.get("error_curp"),
+            "error_email": IMSS_M40_SELECTORS.get("error_email"),
+        }
+        
         errors = {}
-        for eid in error_ids:
+        for error_name, error_id in error_selectors.items():
+            if error_id is None:
+                continue
             try:
-                if self.browser.exists("id", eid, timeout=TIMEOUTS["element_check"]):
-                    text = self.browser.get_text("id", eid).strip()
+                if self.browser.exists("id", error_id, timeout=TIMEOUTS["element_check"]):
+                    text = self.browser.get_text("id", error_id).strip()
                     if text:
-                        errors[eid] = text
+                        errors[error_name] = text
             except Exception:
                 pass
         return errors
 
-    def submit_form(self) -> None:
-        """Hace clic en continuar."""
+    def wait_for_loading_modal_to_disappear(self) -> None:
+        """
+        Espera a que desaparezca el modal de carga 
+        "Tu petición se está procesando... Espera un momento."
+        """
         try:
-            # TODO: Actualizar con selector real del botón M40
-            self.browser.click("id", "continuar")
+            # CSS selector del modal de carga
+            loading_modal_selector = "div.blockUI.blockMsg.blockPage"
+            
+            # Esperar a que aparezca primero (opcional)
+            time.sleep(0.5)
+            
+            # Esperar a que desaparezca
+            end_time = time.time() + TIMEOUTS["long"]  # 30 segundos
+            while time.time() < end_time:
+                try:
+                    modals = self.browser.find_all_css(loading_modal_selector)
+                    
+                    # Si no hay modales, o están ocultos, continuar
+                    if not modals:
+                        return
+                    
+                    # Verificar si el modal está visible
+                    visible = False
+                    for modal in modals:
+                        try:
+                            if self.browser.is_displayed(modal):
+                                visible = True
+                                break
+                        except Exception:
+                            pass
+                    
+                    if not visible:
+                        return
+                    
+                except Exception:
+                    # Si hay error al buscar el modal, asumir que ya no está
+                    return
+                
+                time.sleep(0.3)
+            
+            # Si llegamos aquí, el timeout se cumplió
+            logging.error("Timeout esperando que desaparezca el modal de carga")
+            raise RuntimeError("La página está tardando demasiado en procesar. Intenta de nuevo.")
+            
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logging.error(f"Error esperando modal de carga: {e}", exc_info=True)
+            # No lanzar error, intentar continuar
+
+    def submit_form(self) -> None:
+        """Hace clic en buscar y espera a que termine de procesar."""
+        try:
+            self.browser.click("id", IMSS_M40_SELECTORS["buscar_button"])
             time.sleep(DELAYS["after_submit"])
+            
+            # Esperar a que desaparezca el modal de carga
+            self.wait_for_loading_modal_to_disappear()
+            
+        except RuntimeError:
+            raise
         except Exception as e:
             logging.error(f"Error enviando formulario: {e}", exc_info=True)
             raise RuntimeError("No se pudo enviar el formulario.")
@@ -139,9 +192,9 @@ class IMSSM40Service:
     def validate_form_error(self) -> None:
         """Valida errorForm después de submit."""
         try:
-            # TODO: Actualizar con selector real de M40
-            if self.browser.exists("id", "errorForm", timeout=TIMEOUTS["element_check"]):
-                text = self.browser.get_text("id", "errorForm").strip()
+            error_form_id = IMSS_M40_SELECTORS.get("error_form")
+            if error_form_id and self.browser.exists("id", error_form_id, timeout=TIMEOUTS["element_check"]):
+                text = self.browser.get_text("id", error_form_id).strip()
                 if text:
                     raise RuntimeError(text)
         except RuntimeError:
@@ -150,20 +203,26 @@ class IMSSM40Service:
             pass
 
     def process_form(self, fields: Dict[str, str]) -> None:
-        """Procesa el formulario completo."""
+        """Procesa el formulario completo (primera pantalla)."""
         try:
-            # TODO: Ajustar campos requeridos según M40
-            required = IMSS_M40_REQUIRED_FIELDS
-            for field in required:
-                if not fields.get(field, "").strip():
-                    field_names = {
-                        "curp": "CURP",
-                        "nss": "NSS",
-                        "email": "correo electrónico",
-                        "emailConfirmacion": "confirmación de correo",
-                        "captcha": "captcha"
-                    }
-                    name = field_names.get(field, field)
+            # Validar que todos los campos requeridos tengan valor
+            required_ids = [
+                IMSS_M40_SELECTORS["curp_input"],
+                IMSS_M40_SELECTORS["email_input"],
+                IMSS_M40_SELECTORS["email_confirm_input"],
+                IMSS_M40_SELECTORS["captcha_input"],
+            ]
+            
+            field_names = {
+                IMSS_M40_SELECTORS["curp_input"]: "CURP",
+                IMSS_M40_SELECTORS["email_input"]: "correo electrónico",
+                IMSS_M40_SELECTORS["email_confirm_input"]: "confirmación de correo",
+                IMSS_M40_SELECTORS["captcha_input"]: "captcha",
+            }
+            
+            for field_id in required_ids:
+                if not fields.get(field_id, "").strip():
+                    name = field_names.get(field_id, field_id)
                     raise RuntimeError(f"El campo {name} es requerido.")
 
             self.fill_form(fields)
@@ -172,7 +231,7 @@ class IMSSM40Service:
             if errors:
                 raise RuntimeError(next(iter(errors.values())))
             
-            self.submit_form()
+            self.submit_form()  # Ahora incluye espera del modal
             self.validate_form_error()
             
         except RuntimeError:
@@ -182,16 +241,46 @@ class IMSSM40Service:
             raise RuntimeError("Error procesando el formulario. Verifica los datos ingresados.")
 
     def complete_registration(self) -> None:
-        """Completa la secuencia de registro."""
+        """Completa la secuencia de registro M40."""
         try:
-            # TODO: Ajustar secuencia según flujo M40
             sequence = IMSS_M40_REGISTRATION_SEQUENCE
             
-            for btn_id in sequence:
-                if not self.browser.exists("id", btn_id, timeout=TIMEOUTS["button_sequence"]):
-                    logging.error(f"Botón no encontrado en secuencia: {btn_id}")
-                    raise RuntimeError("La página del IMSS cambió su estructura. Contacta a soporte.")
-                self.browser.click("id", btn_id)
+            for step_id in sequence:
+                # Paso 1: Abrir tile de inscripción
+                if step_id == "tile_inscripcion":
+                    if not self.browser.exists("id", IMSS_M40_SELECTORS["tile_inscripcion"], timeout=TIMEOUTS["button_sequence"]):
+                        logging.error(f"Tile inscripción no encontrado: {step_id}")
+                        raise RuntimeError("No se encontró el menú de inscripción. La página cambió su estructura.")
+                    self.browser.click("id", IMSS_M40_SELECTORS["tile_inscripcion"])
+                    time.sleep(DELAYS["after_click"])
+                
+                # Paso 2: Descargar PDF (se maneja en download_pdfs)
+                # Aquí solo esperamos que esté disponible
+                
+                # Paso 3: Cerrar wizard
+                elif step_id == "cerrar_wizard_button":
+                    if not self.browser.exists("id", IMSS_M40_SELECTORS["cerrar_wizard_button"], timeout=TIMEOUTS["button_sequence"]):
+                        logging.error(f"Botón cerrar wizard no encontrado: {step_id}")
+                        raise RuntimeError("No se encontró el botón de cerrar. La página cambió su estructura.")
+                    self.browser.click("id", IMSS_M40_SELECTORS["cerrar_wizard_button"])
+                    time.sleep(DELAYS["after_click"])
+                
+                # Paso 4: Aceptar (botón sin ID, buscar por texto)
+                elif step_id == "aceptar_button_text":
+                    try:
+                        # Buscar botón por texto "Aceptar"
+                        aceptar_buttons = self.browser.find_all_xpath(
+                            f"//button[contains(., '{IMSS_M40_SELECTORS['aceptar_button_text']}')]"
+                        )
+                        if not aceptar_buttons:
+                            logging.error("Botón Aceptar no encontrado")
+                            raise RuntimeError("No se encontró el botón Aceptar. La página cambió su estructura.")
+                        aceptar_buttons[0].click()
+                        time.sleep(DELAYS["after_click"])
+                    except Exception as e:
+                        logging.error(f"Error al hacer clic en Aceptar: {e}", exc_info=True)
+                        raise RuntimeError("No se pudo confirmar la acción. Intenta de nuevo.")
+                
         except RuntimeError:
             raise
         except Exception as e:
@@ -199,12 +288,13 @@ class IMSSM40Service:
             raise RuntimeError("Error completando el registro en el IMSS.")
 
     def register(self, fields: Dict[str, str]) -> None:
-        """Registra un trabajador."""
+        """Registra un trabajador en M40."""
         try:
             self.process_form(fields)
             
-            # TODO: Actualizar selector según mensaje M40
-            if self.browser.exists("id", "mensajeYaRegistrado", timeout=TIMEOUTS["button_sequence"]):
+            # Verificar si ya está registrado
+            mensaje_registrado_id = IMSS_M40_SELECTORS.get("mensaje_ya_registrado")
+            if mensaje_registrado_id and self.browser.exists("id", mensaje_registrado_id, timeout=TIMEOUTS["button_sequence"]):
                 raise RuntimeError("El trabajador ya está registrado en el sistema IMSS.")
             
             self.complete_registration()
@@ -245,40 +335,39 @@ class IMSSM40Service:
         except FileNotFoundError:
             return []
 
-    def download_pdfs(
-        self,
-        click_selector: str = None,
-        click_count: int = None,
-    ) -> List[str]:
-        """Descarga los PDFs del trabajador."""
-        # TODO: Ajustar selectores según página M40
-        if click_selector is None:
-            click_selector = "span.glyphicon.glyphicon-file"  # TODO: Actualizar
-        if click_count is None:
-            click_count = DOWNLOAD_CONFIG["pdf_click_count"]
-        
+    def download_pdfs(self) -> List[str]:
+        """
+        Descarga los PDFs del trabajador M40.
+        Debe llamarse DESPUÉS de abrir el tile de inscripción.
+        El PDF se descarga haciendo clic en <a class="link print"> que ejecuta imprimePago(...)
+        """
         try:
-            # TODO: Verificar selector de "no registrado" para M40
-            if self.browser.exists("id", "submitCancelar", timeout=TIMEOUTS["element_check"]):
-                raise RuntimeError("El trabajador no ha sido registrado. Usa 'Registrar cliente' primero.")
+            download_selector = IMSS_M40_SELECTORS["download_pdf_link"]
             
-            icons = self.browser.find_all_css(click_selector)
-            if not icons:
-                logging.error("No se encontraron iconos de PDF")
+            links = self.browser.find_all_css(download_selector)
+            
+            if not links:
+                logging.error(f"No se encontraron links de descarga con selector: {download_selector}")
                 raise RuntimeError("No se encontraron PDFs para descargar. Verifica que el registro se completó.")
             
-            for i in range(min(click_count, len(icons))):
+            logging.info(f"Links de descarga encontrados: {len(links)}")
+            
+            clicked = False
+            for i, link in enumerate(links):
                 try:
-                    icons[i].click()
-                    time.sleep(DELAYS["pdf_icon_click"])
-                except Exception:
-                    try:
-                        icons = self.browser.find_all_css(click_selector)
-                        if len(icons) > i:
-                            icons[i].click()
-                            time.sleep(DELAYS["pdf_icon_click"])
-                    except Exception:
-                        pass
+                    if self.browser.is_displayed(link):
+                        link.click()
+                        time.sleep(DELAYS["pdf_icon_click"])
+                        clicked = True
+                        logging.info(f"Clic en link de descarga #{i}")
+                        break
+                except Exception as e:
+                    logging.error(f"Error haciendo clic en link {i}: {e}")
+                    if i == len(links) - 1:
+                        raise
+            
+            if not clicked:
+                raise RuntimeError("No se pudo hacer clic en el link de descarga.")
             
             ok = self._wait_for_all_downloads()
             if not ok:
@@ -291,6 +380,8 @@ class IMSSM40Service:
             if not temp_files:
                 logging.error("No se detectaron archivos descargados")
                 raise RuntimeError("No se descargó ningún archivo. Intenta de nuevo.")
+            
+            logging.info(f"Archivos descargados: {temp_files}")
             
             return [os.path.join(self.temp_download_dir, f) for f in temp_files]
             
@@ -310,19 +401,47 @@ class IMSSM40Service:
             if not target_folder:
                 raise RuntimeError("No se ha seleccionado una carpeta de destino.")
             
-            self.register(fields)
+            # Paso 1: Llenar formulario y hacer clic en Buscar (incluye espera del modal)
+            self.process_form(fields)
+            
+            # Paso 2: Abrir tile de inscripción
+            if not self.browser.exists("id", IMSS_M40_SELECTORS["tile_inscripcion"], timeout=TIMEOUTS["button_sequence"]):
+                raise RuntimeError("No se encontró el menú de inscripción.")
+            self.browser.click("id", IMSS_M40_SELECTORS["tile_inscripcion"])
+            time.sleep(DELAYS["after_click"])
+            
+            # Paso 3: Descargar PDF
             temp_paths = self.download_pdfs()
             
+            # Paso 4: Cerrar wizard
+            if self.browser.exists("id", IMSS_M40_SELECTORS["cerrar_wizard_button"], timeout=TIMEOUTS["button_sequence"]):
+                self.browser.click("id", IMSS_M40_SELECTORS["cerrar_wizard_button"])
+                time.sleep(DELAYS["after_click"])
+            
+            # Paso 5: Aceptar
+            try:
+                aceptar_buttons = self.browser.find_all_xpath(
+                    f"//button[contains(., '{IMSS_M40_SELECTORS['aceptar_button_text']}')]"
+                )
+                if aceptar_buttons:
+                    aceptar_buttons[0].click()
+                    time.sleep(DELAYS["after_click"])
+            except Exception:
+                pass  # No crítico si no encuentra el botón Aceptar
+            
+            # Mover archivos a carpeta destino
             moved_paths = []
             for temp_path in temp_paths:
                 dest = Path(target_folder) / Path(temp_path).name
                 move_file(Path(temp_path), dest)
                 moved_paths.append(str(dest))
             
+            # Salir
             try:
-                # TODO: Actualizar selector del botón salir para M40
-                self.browser.click("id", "salir")
-                time.sleep(DELAYS["browser_exit"])
+                salir_id = IMSS_M40_SELECTORS.get("salir_link")
+                if salir_id and self.browser.exists("id", salir_id, timeout=TIMEOUTS["element_check"]):
+                    self.browser.click("id", salir_id)
+                    time.sleep(DELAYS["browser_exit"])
             except Exception:
                 pass
             
@@ -339,31 +458,7 @@ class IMSSM40Service:
         fields: Dict[str, str],
         target_folder: str,
     ) -> str:
-        """Descarga PDFs sin registrar."""
-        try:
-            if not target_folder:
-                raise RuntimeError("No se ha seleccionado una carpeta de destino.")
-            
-            self.process_form(fields)
-            temp_paths = self.download_pdfs()
-            
-            moved_paths = []
-            for temp_path in temp_paths:
-                dest = Path(target_folder) / Path(temp_path).name
-                move_file(Path(temp_path), dest)
-                moved_paths.append(str(dest))
-            
-            try:
-                # TODO: Actualizar selector del botón salir para M40
-                self.browser.click("id", "salir")
-                time.sleep(DELAYS["browser_exit"])
-            except Exception:
-                pass
-            
-            return moved_paths[0] if moved_paths else ""
-            
-        except RuntimeError:
-            raise
-        except Exception as e:
-            logging.error(f"Error descargando PDF: {e}", exc_info=True)
-            raise RuntimeError("Error al descargar el PDF.")
+        """Descarga PDFs sin registrar (trabajador ya registrado)."""
+        # Para M40, el flujo es el mismo que register_and_download
+        # porque no hay un "modo descarga" separado
+        return self.register_and_download(fields, target_folder)

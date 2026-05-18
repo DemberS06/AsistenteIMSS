@@ -81,7 +81,50 @@ IMSS_TI_SELECTORS = {
 # ══════════════════════════════════════════════════════════
 
 IMSS_M40_SELECTORS = {
-    # TODO: Definir cuando se implemente M40
+    # ──────────────────────────────────────────────────────
+    # Primera pantalla - Buscar
+    # ──────────────────────────────────────────────────────
+    "captcha_img": "captchaImg",
+    "curp_input": "registroCurp",
+    "email_input": "correoInput",
+    "email_confirm_input": "correoConfirmacionInput",
+    "captcha_input": "strCaptcha",
+    "buscar_button": "buscar",
+    
+    # ──────────────────────────────────────────────────────
+    # Segunda pantalla - Submenú
+    # ──────────────────────────────────────────────────────
+    "tile_inscripcion": "inscripcionCVRO",  # Tile para abrir submenú
+    
+    # ──────────────────────────────────────────────────────
+    # Tercera pantalla - Descargar PDF
+    # ──────────────────────────────────────────────────────
+    # El link <a> que contiene el icono y ejecuta onclick="imprimePago(...)"
+    "download_pdf_link": "a.link.print",  # CSS selector del <a>
+    
+    # ──────────────────────────────────────────────────────
+    # Cuarta pantalla - Cerrar wizard
+    # ──────────────────────────────────────────────────────
+    "cerrar_wizard_button": "cerrarWizard",
+    
+    # ──────────────────────────────────────────────────────
+    # Quinta pantalla - Aceptar
+    # ──────────────────────────────────────────────────────
+    # No tiene ID, buscar por texto "Aceptar"
+    "aceptar_button_text": "Aceptar",
+    
+    # ──────────────────────────────────────────────────────
+    # Salir (disponible en cualquier momento)
+    # ──────────────────────────────────────────────────────
+    "salir_link": "cerrarSesionLink",
+    
+    # ──────────────────────────────────────────────────────
+    # Mensajes de error (pendientes de confirmar)
+    # ──────────────────────────────────────────────────────
+    "error_curp": None,        # TODO: Confirmar selector
+    "error_email": None,       # TODO: Confirmar selector
+    "error_form": None,        # TODO: Confirmar selector
+    "mensaje_ya_registrado": None,  # TODO: Confirmar selector
 }
 
 
@@ -121,7 +164,7 @@ WHATSAPP_SELECTORS = {
 # Timeouts en segundos
 TIMEOUTS = {
     "default": 10,
-    "long": 30,
+    "long": 60,
     "short": 5,
     "element_check": 1,
     "button_sequence": 2,
@@ -157,7 +200,9 @@ DELAYS = {
 # ══════════════════════════════════════════════════════════
 
 IMSS_TI_REQUIRED_FIELDS = ["curp", "nss", "email", "emailConfirmacion", "captcha"]
-IMSS_M40_REQUIRED_FIELDS = []  # TODO: Definir cuando se implemente
+
+# M40 - Primera pantalla (Buscar)
+IMSS_M40_REQUIRED_FIELDS = ["curp", "email", "emailConfirmacion", "captcha"]
 
 
 # ══════════════════════════════════════════════════════════
@@ -173,7 +218,13 @@ IMSS_TI_REGISTRATION_SEQUENCE = [
     "guarda",
 ]
 
-IMSS_M40_REGISTRATION_SEQUENCE = []  # TODO: Definir cuando se implemente
+# M40 - Secuencia completa
+IMSS_M40_REGISTRATION_SEQUENCE = [
+    # Ya no se incluye "buscar" aquí porque se ejecuta en process_form()
+    "tile_inscripcion",      # Abrir submenú de inscripción
+    "cerrar_wizard_button",  # Cerrar wizard después de descargar
+    "aceptar_button_text",   # Aceptar (botón sin ID)
+]
 
 
 # ══════════════════════════════════════════════════════════
@@ -238,7 +289,19 @@ EXCEL_COLUMNS_TI = [
     "MENSAJE",
 ]
 
-EXCEL_COLUMNS_M40 = []  # TODO: Definir cuando se implemente
+# M40 - Mismas columnas que TI
+EXCEL_COLUMNS_M40 = [
+    "ID",
+    "CLIENTE",
+    "NSS",
+    "CURP",
+    "RFC",
+    "CORREO",
+    "NUMERO",
+    "CARPETAPDF",
+    "PDF",
+    "MENSAJE",
+]
 
 
 # ══════════════════════════════════════════════════════════

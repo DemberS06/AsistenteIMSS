@@ -57,21 +57,22 @@ class TrabajadorM40:
     def to_imss_fields(self, captcha: str) -> dict:
         """
         Genera el diccionario de campos para el formulario IMSS M40.
+        IMPORTANTE: Los IDs de los campos son diferentes a TI.
         
         Args:
             captcha: Valor del captcha ingresado por el usuario
             
         Returns:
-            Dict con los campos listos para enviar al formulario
+            Dict con los campos listos para enviar al formulario M40
         """
-        # TODO: Ajustar campos según formulario M40 cuando se implemente
+        # Usar los IDs correctos de M40 (diferentes a TI)
+        from config import IMSS_M40_SELECTORS
+        
         return {
-            "curp":              self.curp,
-            "rfc":               self.rfc,
-            "nss":               self.nss,
-            "email":             self.correo,
-            "emailConfirmacion": self.correo,
-            "captcha":           captcha,
+            IMSS_M40_SELECTORS["curp_input"]: self.curp,                      # registroCurp
+            IMSS_M40_SELECTORS["email_input"]: self.correo,                   # correoInput
+            IMSS_M40_SELECTORS["email_confirm_input"]: self.correo,           # correoConfirmacionInput
+            IMSS_M40_SELECTORS["captcha_input"]: captcha,                     # strCaptcha
         }
     
     @staticmethod

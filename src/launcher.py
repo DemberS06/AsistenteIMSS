@@ -44,38 +44,12 @@ class Launcher(QWidget):
         # Botón TI
         self.btn_ti = QPushButton("Trabajadores Independientes (TI)")
         self.btn_ti.setMinimumHeight(60)
-        self.btn_ti.setStyleSheet("""
-            QPushButton {
-                font-size: 14px;
-                font-weight: bold;
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
         self.btn_ti.clicked.connect(lambda: self.launch_mode("ti"))
         layout.addWidget(self.btn_ti)
         
         # Botón M40
         self.btn_m40 = QPushButton("Modalidad 40 (M40)")
         self.btn_m40.setMinimumHeight(60)
-        self.btn_m40.setStyleSheet("""
-            QPushButton {
-                font-size: 14px;
-                font-weight: bold;
-                background-color: #2196F3;
-                color: white;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #0b7dda;
-            }
-        """)
         self.btn_m40.clicked.connect(lambda: self.launch_mode("m40"))
         layout.addWidget(self.btn_m40)
         
