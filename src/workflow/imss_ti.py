@@ -11,6 +11,7 @@ from services.imss_ti import IMSSTiService
 from services.whatsapp_web import WhatsAppService
 from tools.excel import ExcelTools
 from tools.pdf import find_message_for_client
+from tools.file import ensure_directory
 
 
 class IMSSTiWorkflow:
@@ -150,11 +151,25 @@ class IMSSTiWorkflow:
                 "Selecciónala primero."
             )
 
-        pdf_path = self.imss.register_and_download(
-            fields=trabajador.to_imss_fields(captcha_value),
-            target_folder=trabajador.carpeta_pdf,
+        if not trabajador.cliente:
+            raise RuntimeError(
+                "El cliente no tiene nombre. "
+                "Asigna un nombre antes de registrar."
+            )
+
+        # Crear subcarpeta con el nombre del cliente
+        carpeta_cliente = self._create_client_folder(
+            trabajador.carpeta_pdf, 
+            trabajador.cliente
         )
 
+        # Descargar PDF en la subcarpeta del cliente
+        pdf_path = self.imss.register_and_download(
+            fields=trabajador.to_imss_fields(captcha_value),
+            target_folder=carpeta_cliente,
+        )
+
+        # Guardar la ruta COMPLETA del PDF en Excel
         self.excel.update_row(self.current_index, {"PDF": pdf_path})
         self.excel.save()
         return pdf_path
@@ -169,11 +184,25 @@ class IMSSTiWorkflow:
                 "Selecciónala primero."
             )
 
-        pdf_path = self.imss.download_pdf_only(
-            fields=trabajador.to_imss_fields(captcha_value),
-            target_folder=trabajador.carpeta_pdf,
+        if not trabajador.cliente:
+            raise RuntimeError(
+                "El cliente no tiene nombre. "
+                "Asigna un nombre antes de descargar."
+            )
+
+        # Crear subcarpeta con el nombre del cliente
+        carpeta_cliente = self._create_client_folder(
+            trabajador.carpeta_pdf, 
+            trabajador.cliente
         )
 
+        # Descargar PDF en la subcarpeta del cliente
+        pdf_path = self.imss.download_pdf_only(
+            fields=trabajador.to_imss_fields(captcha_value),
+            target_folder=carpeta_cliente,
+        )
+
+        # Guardar la ruta COMPLETA del PDF en Excel
         self.excel.update_row(self.current_index, {"PDF": pdf_path})
         self.excel.save()
         return pdf_path
@@ -207,11 +236,6 @@ class IMSSTiWorkflow:
     def send_range(
         self, start: int, end: int, global_pdf_path: str
     ) -> tuple[int, int]:
-        """
-        Envía mensajes al rango [start, end] (índices base-0).
-        Para cada cliente extrae su mensaje del PDF global.
-        Devuelve (éxitos, fallos).
-        """
         self._ensure_excel()
         total = self.excel.row_count()
 
@@ -239,6 +263,21 @@ class IMSSTiWorkflow:
     # ─────────────────────────────────────────
     # Internos
     # ─────────────────────────────────────────
+
+    def _create_client_folder(self, base_folder: str, client_name: str) -> str:
+        safe_name = "".join(
+            c for c in client_name 
+            if c.isalnum() or c in (' ', '-', '_')
+        ).strip()
+        
+        if not safe_name:
+            safe_name = "Sin_nombre"
+        
+        carpeta_cliente = Path(base_folder) / safe_name
+        
+        ensure_directory(carpeta_cliente)
+        
+        return str(carpeta_cliente)
 
     def _ensure_excel(self) -> None:
         if not self.excel:
