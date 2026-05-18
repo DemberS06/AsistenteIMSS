@@ -17,7 +17,7 @@ from PyQt5.QtGui import QPixmap
 from config import DATA_DIR
 from models.trabajador import Trabajador
 from models.mensaje import Mensaje
-from workflow.imss_ti import IMSSTiWorkflow
+from work_flow.imss_ti import IMSSTiWorkflow
 
 
 # ──────────────────────────────────────────────────────────────
