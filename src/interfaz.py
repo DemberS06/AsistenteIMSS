@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 
-from config import DATA_DIR
+from config import DATA_DIR, ERROR_LOG_FILE, FILE_EXTENSIONS
 from models.trabajador_ti import TrabajadorTI
 from models.mensaje import Mensaje
 from work_flow.imss_ti import IMSSTiWorkflow
@@ -27,7 +27,7 @@ from work_flow.imss_ti import IMSSTiWorkflow
 def _excepcion_no_manejada(exc_type, exc_value, exc_tb):
     texto = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     try:
-        log_path = os.path.join(DATA_DIR, "error.log")
+        log_path = ERROR_LOG_FILE
         with open(log_path, "a", encoding="utf-8") as f:
             f.write("=" * 80 + "\n")
             f.write(texto + "\n")
@@ -37,7 +37,7 @@ def _excepcion_no_manejada(exc_type, exc_value, exc_tb):
         QMessageBox.critical(
             None, "Error no manejado",
             f"Ocurrió un error:\n{exc_value}\n\n"
-            f"Revisa el log en:\n{os.path.join(DATA_DIR, 'error.log')}"
+            f"Revisa el log en:\n{ERROR_LOG_FILE}"
         )
     except Exception:
         print("Error crítico:\n", texto)

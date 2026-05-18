@@ -1,11 +1,12 @@
 # work_flow/imss_ti.py
 from __future__ import annotations
 import os
+import logging
 
 from pathlib import Path
 from typing import Optional
 
-from config import WHATSAPP_CONFIG, VALIDATION, EXCEL_COLUMNS_TI
+from config import WHATSAPP_CONFIG, VALIDATION, EXCEL_COLUMNS_TI, ERROR_LOG_FILE
 from models.trabajador_ti import TrabajadorTI
 from models.mensaje import Mensaje
 from services.imss_ti import IMSSTiService
@@ -13,6 +14,15 @@ from services.whatsapp_web import WhatsAppService
 from tools.excel import ExcelTools
 from tools.pdf import extract_message
 from tools.file import ensure_directory
+
+
+# Configurar logging
+logging.basicConfig(
+    filename=ERROR_LOG_FILE,
+    level=logging.ERROR,
+    format='[%(asctime)s] [%(funcName)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
 class IMSSTiWorkflow:
@@ -23,8 +33,6 @@ class IMSSTiWorkflow:
         self.current_index: int = 0
         self.imss = IMSSTiService()
 
-        # Perfil dedicado para WhatsApp — mantiene la sesión entre ejecuciones
-        # Usar nombres de config.py
         wa_profile_dir = os.path.join(
             data_dir, 
             WHATSAPP_CONFIG["profile_dir_name"]
@@ -38,32 +46,28 @@ class IMSSTiWorkflow:
         )
         self.whatsapp = WhatsAppService(browser=wa_browser)
 
-
-    # ─────────────────────────────────────────
-    # Excel / navegación
-    # ─────────────────────────────────────────
-
     def load_excel(self, path: str) -> TrabajadorTI:
+        """Carga un archivo Excel."""
         self.excel = ExcelTools(path)
         self.excel.load()
-        
-        # Usar columnas de config.py
         self.excel.ensure_columns(EXCEL_COLUMNS_TI)
         self.excel.save()
-        
         self.current_index = 0
         return self.get_current_client()
 
     def get_current_client(self) -> TrabajadorTI:
+        """Obtiene el trabajador actual."""
         self._ensure_excel()
         return TrabajadorTI.from_row(self.excel.get_row(self.current_index))
 
     def save_current_client(self, trabajador: TrabajadorTI) -> None:
+        """Guarda el trabajador actual."""
         self._ensure_excel()
         self.excel.update_row(self.current_index, trabajador.to_row())
         self.excel.save()
 
     def create_new_client(self) -> TrabajadorTI:
+        """Crea un nuevo trabajador."""
         self._ensure_excel()
         self.excel.add_row(TrabajadorTI().to_row())
         self.current_index = self.excel.row_count() - 1
@@ -78,45 +82,46 @@ class IMSSTiWorkflow:
         return self.get_current_client()
 
     def go_previous(self) -> TrabajadorTI:
+        """Navega al trabajador anterior."""
         self._ensure_excel()
         if self.current_index > 0:
             self.current_index -= 1
         return self.get_current_client()
 
     def go_to(self, index: int) -> TrabajadorTI:
+        """Navega a un índice específico."""
         self._ensure_excel()
         if 0 <= index < self.excel.row_count():
             self.current_index = index
         return self.get_current_client()
 
     def row_count(self) -> int:
+        """Retorna el número total de trabajadores."""
         self._ensure_excel()
         return self.excel.row_count()
 
     def update_field(self, field: str, value: str) -> None:
+        """Actualiza un campo del cliente actual."""
         self._ensure_excel()
         self.excel.update_row(self.current_index, {field: value})
         self.excel.save()
 
-    # ─────────────────────────────────────────
-    # Mensaje (PDF global de mensajes)
-    # ─────────────────────────────────────────
-
-    def get_message_for_client(self, trabajador: TrabajadorTI, pdf_path: str) -> Mensaje:
+    def get_message_for_client(
+        self, trabajador: TrabajadorTI, pdf_path: str
+    ) -> Mensaje:
+        """Extrae el mensaje personalizado para un trabajador."""
         path = Path(pdf_path)
         result = None
         
-        # 1. Intentar buscar por ID (si existe en el trabajador)
         if hasattr(trabajador, 'id') and trabajador.id:
             result = extract_message(
                 pdf_path=path,
                 identifier=str(trabajador.id),
                 search_by="id",
-                remove_first_line_flag=True,  # Eliminar ID
+                remove_first_line_flag=True,
                 normalize_breaks=True
             )
         
-        # 2. Si no encontró por ID o no tiene ID, buscar por nombre
         if not result or not result.get("success"):
             result = extract_message(
                 pdf_path=path,
@@ -126,7 +131,6 @@ class IMSSTiWorkflow:
                 normalize_breaks=True
             )
         
-        # 3. Devolver resultado
         return Mensaje(
             texto      = result.get("message", ""),
             encontrado = result.get("success", False),
@@ -134,96 +138,86 @@ class IMSSTiWorkflow:
             pdf_path   = str(path),
         )
 
-    # ─────────────────────────────────────────
-    # IMSS
-    # ─────────────────────────────────────────
-
     def open_imss_page(self) -> None:
+        """Abre la página del IMSS."""
         self.imss.start()
         self.imss.open_page()
 
     def get_captcha(self) -> bytes:
+        """Obtiene la imagen del captcha."""
         return self.imss.get_captcha_image()
 
     def register_current_client(self, captcha_value: str) -> str:
+        """Registra el trabajador actual."""
         self._ensure_excel()
         trabajador = self.get_current_client()
 
         if not trabajador.carpeta_pdf:
-            raise RuntimeError(
-                "El cliente no tiene carpeta de destino (CARPETAPDF). "
-                "Selecciónala primero."
-            )
+            raise RuntimeError("No se ha seleccionado una carpeta de destino.")
 
         if not trabajador.cliente:
-            raise RuntimeError(
-                "El cliente no tiene nombre. "
-                "Asigna un nombre antes de registrar."
+            raise RuntimeError("El cliente no tiene nombre. Agrégalo antes de registrar.")
+
+        try:
+            carpeta_cliente = self._create_client_folder(
+                trabajador.carpeta_pdf, 
+                trabajador.cliente
             )
 
-        # Crear subcarpeta con el nombre del cliente
-        carpeta_cliente = self._create_client_folder(
-            trabajador.carpeta_pdf, 
-            trabajador.cliente
-        )
+            pdf_path = self.imss.register_and_download(
+                fields=trabajador.to_imss_fields(captcha_value),
+                target_folder=carpeta_cliente,
+            )
 
-        # Descargar PDF en la subcarpeta del cliente
-        pdf_path = self.imss.register_and_download(
-            fields=trabajador.to_imss_fields(captcha_value),
-            target_folder=carpeta_cliente,
-        )
-
-        # Guardar la ruta COMPLETA del PDF en Excel
-        self.excel.update_row(self.current_index, {"PDF": pdf_path})
-        self.excel.save()
-        return pdf_path
+            self.excel.update_row(self.current_index, {"PDF": pdf_path})
+            self.excel.save()
+            return pdf_path
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logging.error(f"Error registrando cliente: {e}", exc_info=True)
+            raise RuntimeError("Error al registrar el cliente.")
 
     def download_pdf_current_client(self, captcha_value: str) -> str:
+        """Descarga el PDF del trabajador actual."""
         self._ensure_excel()
         trabajador = self.get_current_client()
 
         if not trabajador.carpeta_pdf:
-            raise RuntimeError(
-                "El cliente no tiene carpeta de destino (CARPETAPDF). "
-                "Selecciónala primero."
-            )
+            raise RuntimeError("No se ha seleccionado una carpeta de destino.")
 
         if not trabajador.cliente:
-            raise RuntimeError(
-                "El cliente no tiene nombre. "
-                "Asigna un nombre antes de descargar."
+            raise RuntimeError("El cliente no tiene nombre. Agrégalo antes de descargar.")
+
+        try:
+            carpeta_cliente = self._create_client_folder(
+                trabajador.carpeta_pdf, 
+                trabajador.cliente
             )
 
-        # Crear subcarpeta con el nombre del cliente
-        carpeta_cliente = self._create_client_folder(
-            trabajador.carpeta_pdf, 
-            trabajador.cliente
-        )
+            pdf_path = self.imss.download_pdf_only(
+                fields=trabajador.to_imss_fields(captcha_value),
+                target_folder=carpeta_cliente,
+            )
 
-        # Descargar PDF en la subcarpeta del cliente
-        pdf_path = self.imss.download_pdf_only(
-            fields=trabajador.to_imss_fields(captcha_value),
-            target_folder=carpeta_cliente,
-        )
-
-        # Guardar la ruta COMPLETA del PDF en Excel
-        self.excel.update_row(self.current_index, {"PDF": pdf_path})
-        self.excel.save()
-        return pdf_path
-
-    # ─────────────────────────────────────────
-    # WhatsApp
-    # ─────────────────────────────────────────
+            self.excel.update_row(self.current_index, {"PDF": pdf_path})
+            self.excel.save()
+            return pdf_path
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logging.error(f"Error descargando PDF: {e}", exc_info=True)
+            raise RuntimeError("Error al descargar el PDF.")
 
     def open_whatsapp(self) -> None:
-        """Abre WhatsApp Web en el navegador."""
+        """Abre WhatsApp Web."""
         try:
             self.whatsapp.start_session()
         except Exception:
             pass
 
     def send_whatsapp_current_client(self, message_text: str) -> None:
-        """Envía mensaje y PDF por WhatsApp al trabajador actual."""
+        """Envía mensaje y PDF por WhatsApp."""
         trabajador = self.get_current_client()
 
         if not trabajador.numero:
@@ -233,18 +227,21 @@ class IMSSTiWorkflow:
         if not trabajador.pdf:
             raise RuntimeError("El cliente no tiene PDF asignado.")
         if not Path(trabajador.pdf).exists():
-            raise RuntimeError(f"El PDF no existe en disco: {trabajador.pdf}")
+            raise RuntimeError("El archivo PDF no existe. Descárgalo primero.")
 
         self.whatsapp.open_chat(trabajador.numero)
         self.whatsapp.send_message(message_text)
         self.whatsapp.send_pdf(trabajador.pdf)
 
-    def send_range(self, start: int, end: int, global_pdf_path: str) -> tuple[int, int]:
+    def send_range(
+        self, start: int, end: int, global_pdf_path: str
+    ) -> tuple[int, int]:
+        """Envía mensajes por WhatsApp a un rango de trabajadores."""
         self._ensure_excel()
         total = self.excel.row_count()
 
         if start < 0 or end >= total or start > end:
-            raise ValueError(f"Rango inválido: [{start}, {end}] (total={total})")
+            raise ValueError(f"Rango inválido. Verifica los números ingresados.")
 
         ok = fail = 0
         for i in range(start, end + 1):
@@ -260,31 +257,26 @@ class IMSSTiWorkflow:
                 ok += 1
             except Exception as e:
                 fail += 1
-                print(f"[send_range] Fila {i}: {e}")
+                logging.error(f"Error enviando a fila {i}: {e}", exc_info=True)
 
         return ok, fail
 
-    # ─────────────────────────────────────────
-    # Internos
-    # ─────────────────────────────────────────
-
     def _create_client_folder(self, base_folder: str, client_name: str) -> str:
-        # Usar caracteres permitidos de config
+        """Crea una subcarpeta para el cliente."""
         safe_name = "".join(
             c for c in client_name 
             if c.isalnum() or c in VALIDATION["allowed_folder_chars"]
         ).strip()
         
-        # Usar nombre fallback de config si queda vacío
         if not safe_name:
             safe_name = VALIDATION["fallback_folder_name"]
         
         carpeta_cliente = Path(base_folder) / safe_name
-        
         ensure_directory(carpeta_cliente)
         
         return str(carpeta_cliente)
 
     def _ensure_excel(self) -> None:
+        """Verifica que haya un Excel cargado."""
         if not self.excel:
-            raise RuntimeError("No hay Excel cargado.")
+            raise RuntimeError("No hay Excel cargado. Abre un archivo primero.")

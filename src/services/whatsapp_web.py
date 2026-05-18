@@ -3,10 +3,20 @@ from __future__ import annotations
 
 import os
 import time
+import logging
 from typing import Optional
 
-from config import WHATSAPP_URL, WHATSAPP_SELECTORS, TIMEOUTS, DELAYS
+from config import WHATSAPP_URL, WHATSAPP_SELECTORS, TIMEOUTS, DELAYS, ERROR_LOG_FILE
 from tools.browser import BrowserTools
+
+
+# Configurar logging
+logging.basicConfig(
+    filename=ERROR_LOG_FILE,
+    level=logging.ERROR,
+    format='[%(asctime)s] [%(funcName)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
 class WhatsAppService:
@@ -16,7 +26,6 @@ class WhatsAppService:
         browser: BrowserTools | None = None,
         default_timeout: int = None,
     ):
-        # Usar timeout de config si no se especifica
         if default_timeout is None:
             default_timeout = TIMEOUTS["default"]
         
@@ -24,32 +33,27 @@ class WhatsAppService:
         self.default_timeout = default_timeout
         self._chat_open = False
 
-    # ─────────────────────────────────────────
-    # Sesión
-    # ─────────────────────────────────────────
-
     def start_session(self) -> None:
+        """Inicia sesión de WhatsApp Web."""
         if not self.browser.is_active():
             self.browser.start()
         self.browser.go_to(WHATSAPP_URL)
         self.browser.wait_for("tag", "body", timeout=TIMEOUTS["whatsapp_login"])
 
     def close_session(self) -> None:
+        """Cierra la sesión del navegador."""
         self.browser.close()
         self._chat_open = False
 
     def is_logged_in(self) -> bool:
+        """Verifica si el usuario está logueado."""
         try:
             driver = self.browser.driver
             if driver is None:
                 return False
 
-            url_ok = False
-            try:
-                url_ok = "web.whatsapp.com" in (driver.current_url or "")
-            except Exception:
-                url_ok = False
-
+            url_ok = "web.whatsapp.com" in (driver.current_url or "")
+            
             cookies_ok = False
             try:
                 ck = driver.get_cookies() or []
@@ -66,7 +70,6 @@ class WhatsAppService:
 
             dom_ok = False
             try:
-                # Usar selectores de config para verificar login
                 dom_checks = (
                     WHATSAPP_SELECTORS["search_inputs"] + 
                     WHATSAPP_SELECTORS["conversation_panel"]
@@ -83,13 +86,10 @@ class WhatsAppService:
         except Exception:
             return False
 
-    # ─────────────────────────────────────────
-    # Chat
-    # ─────────────────────────────────────────
-
     def open_chat(self, phone_number: str) -> None:
+        """Abre el chat de un contacto."""
         if not self.is_logged_in():
-            raise RuntimeError("WhatsApp Web no está activo. Ábrelo primero.")
+            raise RuntimeError("WhatsApp Web no está abierto. Ábrelo primero.")
 
         phone = str(phone_number).strip().lstrip("+")
 
@@ -98,20 +98,17 @@ class WhatsAppService:
             opened = self._open_chat_by_url(phone)
 
         if not opened:
+            logging.error(f"No se pudo abrir chat con {phone_number}")
             raise RuntimeError(
                 f"No se pudo abrir el chat con {phone_number}. "
-                "Verifica que el número esté guardado o que la sesión esté activa."
+                "Verifica que el número esté guardado en tus contactos."
             )
 
         self._chat_open = True
 
-    # ─────────────────────────────────────────
-    # Helpers internos
-    # ─────────────────────────────────────────
-
     def _conversation_is_open(self, search_field=None) -> bool:
+        """Verifica si hay una conversación abierta."""
         try:
-            # Usar selectores de config
             for sel in WHATSAPP_SELECTORS["conversation_panel"]:
                 if self.browser.find_all_css(sel):
                     return True
@@ -131,7 +128,7 @@ class WhatsAppService:
         return False
 
     def _find_chat_input(self):
-        # Usar selectores de config
+        """Encuentra el campo de entrada del chat."""
         for sel in WHATSAPP_SELECTORS["chat_input"]:
             try:
                 boxes = self.browser.find_all_css(sel)
@@ -141,7 +138,6 @@ class WhatsAppService:
             except Exception:
                 continue
 
-        # Fallback: contenteditable más grande visible
         try:
             all_inputs = self.browser.find_all_css("div[contenteditable='true']")
             max_area, candidate = 0, None
@@ -159,15 +155,11 @@ class WhatsAppService:
         except Exception:
             return None
 
-    # ─────────────────────────────────────────
-    # Estrategias para abrir chat
-    # ─────────────────────────────────────────
-
     def _open_chat_by_search(self, phone: str) -> bool:
+        """Intenta abrir chat usando la búsqueda."""
         search_field = None
         end = time.time() + TIMEOUTS["search_field"]
         
-        # Buscar campo de búsqueda usando selectores de config
         while time.time() < end and search_field is None:
             search_field = self.browser.find_first(WHATSAPP_SELECTORS["search_inputs"])
             if search_field is None:
@@ -188,14 +180,12 @@ class WhatsAppService:
 
             self.browser.send_keys_to(search_field, "\n")
 
-            # Esperar que abra la conversación
             end2 = time.time() + TIMEOUTS["search_results"]
             while time.time() < end2:
                 if self._conversation_is_open(search_field):
                     return True
                 time.sleep(DELAYS["whatsapp_doc_click"])
 
-            # ENTER no abrió — clicar primer resultado
             for result_sel in ("div[role='option']", "div[role='button'][data-testid]"):
                 try:
                     els = self.browser.find_all_css(result_sel)
@@ -213,6 +203,7 @@ class WhatsAppService:
         return False
 
     def _open_chat_by_url(self, phone: str) -> bool:
+        """Intenta abrir chat por URL."""
         try:
             self.browser.go_to(f"{WHATSAPP_URL}send?phone={phone}")
             self.browser.wait_until(
@@ -230,17 +221,15 @@ class WhatsAppService:
             pass
         return False
 
-    # ─────────────────────────────────────────
-    # Mensaje de texto
-    # ─────────────────────────────────────────
-
     def send_message(self, message: str) -> None:
+        """Envía un mensaje de texto."""
         if not self._chat_open:
-            raise RuntimeError("No hay chat abierto.")
+            raise RuntimeError("No hay ningún chat abierto.")
 
         input_box = self._find_chat_input()
         if input_box is None:
-            raise RuntimeError("No se encontró el campo de texto del chat.")
+            logging.error("No se encontró el campo de texto del chat")
+            raise RuntimeError("No se encontró el campo de texto del chat. Verifica que WhatsApp esté cargado.")
 
         try:
             input_box.click()
@@ -254,104 +243,104 @@ class WhatsAppService:
         for i, line in enumerate(lines):
             input_box.send_keys(line)
             if i < len(lines) - 1:
-                input_box.send_keys("\ue008\ue006")  # SHIFT+ENTER
+                input_box.send_keys("\ue008\ue006")
 
         input_box.send_keys("\n")
         time.sleep(DELAYS["whatsapp_enter"])
 
-    # ─────────────────────────────────────────
-    # PDF
-    # ─────────────────────────────────────────
-
     def send_pdf(self, pdf_path: str, message: Optional[str] = None) -> None:
+        """Envía un archivo PDF."""
         if not self._chat_open:
-            raise RuntimeError("No hay chat abierto.")
+            raise RuntimeError("No hay ningún chat abierto.")
         if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"PDF no existe: {pdf_path}")
+            logging.error(f"PDF no existe: {pdf_path}")
+            raise FileNotFoundError(f"El archivo PDF no existe: {pdf_path}")
         if message:
             self.send_message(message)
 
         abs_path = os.path.abspath(pdf_path)
 
-        # 1. Abrir submenú con action_click (mantiene foco en navegador)
-        clip = self.browser.find_first(WHATSAPP_SELECTORS["clip_button"])
-        if clip is None:
-            raise RuntimeError("No se encontró el botón de adjuntar archivo.")
+        try:
+            clip = self.browser.find_first(WHATSAPP_SELECTORS["clip_button"])
+            if clip is None:
+                logging.error("No se encontró botón de adjuntar")
+                raise RuntimeError("No se encontró el botón de adjuntar archivo. Verifica que WhatsApp esté cargado.")
 
-        self.browser.action_click(clip)
-        time.sleep(DELAYS["whatsapp_clip"])
+            self.browser.action_click(clip)
+            time.sleep(DELAYS["whatsapp_clip"])
 
-        # 2. Clicar Document del submenú
-        doc_clicked = False
-        end = time.time() + TIMEOUTS["whatsapp_chat_open"]
-        
-        while time.time() < end and not doc_clicked:
-            try:
-                for texto in ("Document", "Documento", "Fichier", "Datei"):
-                    els = self.browser.find_all_xpath(
-                        f"//*[normalize-space(text())='{texto}']"
-                    )
-                    for el in els:
-                        if self.browser.is_displayed(el):
-                            self.browser.action_click(el)
-                            doc_clicked = True
+            doc_clicked = False
+            end = time.time() + TIMEOUTS["whatsapp_chat_open"]
+            
+            while time.time() < end and not doc_clicked:
+                try:
+                    for texto in ("Document", "Documento", "Fichier", "Datei"):
+                        els = self.browser.find_all_xpath(f"//*[normalize-space(text())='{texto}']")
+                        for el in els:
+                            if self.browser.is_displayed(el):
+                                self.browser.action_click(el)
+                                doc_clicked = True
+                                break
+                        if doc_clicked:
                             break
-                    if doc_clicked:
-                        break
-            except Exception:
-                pass
+                except Exception:
+                    pass
+                if not doc_clicked:
+                    time.sleep(DELAYS["whatsapp_doc_click"])
+
             if not doc_clicked:
+                logging.error("No se encontró opción Document")
+                raise RuntimeError("No se encontró la opción de documento. Verifica que WhatsApp esté actualizado.")
+
+            file_input = None
+            end = time.time() + TIMEOUTS["file_input"]
+            
+            while time.time() < end:
+                try:
+                    all_inputs = self.browser.find_all_css("input[type='file']")
+                    for inp in all_inputs:
+                        accept = self.browser.get_element_attribute(inp, "accept").lower().strip()
+                        if "image" not in accept:
+                            file_input = inp
+                            break
+                except Exception:
+                    pass
+                if file_input is not None:
+                    break
                 time.sleep(DELAYS["whatsapp_doc_click"])
 
-        if not doc_clicked:
-            raise RuntimeError("No se encontró la opción Document en el submenú.")
+            if file_input is None:
+                logging.error("No apareció input de documentos")
+                raise RuntimeError("No se pudo cargar el selector de archivos.")
 
-        # 3. Esperar input de documentos (accept="*", no imágenes)
-        file_input = None
-        end = time.time() + TIMEOUTS["file_input"]
-        
-        while time.time() < end:
             try:
-                all_inputs = self.browser.find_all_css("input[type='file']")
-                for inp in all_inputs:
-                    accept = self.browser.get_element_attribute(inp, "accept").lower().strip()
-                    if "image" not in accept:
-                        file_input = inp
-                        break
-            except Exception:
-                pass
-            if file_input is not None:
-                break
-            time.sleep(DELAYS["whatsapp_doc_click"])
-
-        if file_input is None:
-            raise RuntimeError("No apareció el input de documentos.")
-
-        # 4. Enviar ruta al input
-        try:
-            file_input.send_keys(abs_path)
-        except Exception:
-            try:
-                self.browser.run_js("arguments[0].style.display='block';", file_input)
                 file_input.send_keys(abs_path)
-            except Exception as e:
-                raise RuntimeError(f"No se pudo adjuntar el PDF: {e}")
+            except Exception:
+                try:
+                    self.browser.run_js("arguments[0].style.display='block';", file_input)
+                    file_input.send_keys(abs_path)
+                except Exception as e:
+                    logging.error(f"No se pudo adjuntar PDF: {e}", exc_info=True)
+                    raise RuntimeError("No se pudo adjuntar el archivo PDF.")
 
-        # 5. Cerrar explorador de archivos con Escape del sistema
-        time.sleep(DELAYS["whatsapp_file_attach"])
-        self.browser.press_system_key("escape")
-        time.sleep(DELAYS["whatsapp_escape"])
+            time.sleep(DELAYS["whatsapp_file_attach"])
+            self.browser.press_system_key("escape")
+            time.sleep(DELAYS["whatsapp_escape"])
 
-        # 6. Esperar preview y enviar con Enter
-        time.sleep(DELAYS["whatsapp_send"])
-        self.browser.press_enter()
-        time.sleep(DELAYS["whatsapp_escape"])
+            time.sleep(DELAYS["whatsapp_send"])
+            self.browser.press_enter()
+            time.sleep(DELAYS["whatsapp_escape"])
 
-    # ─────────────────────────────────────────
-    # Flujo completo
-    # ─────────────────────────────────────────
+        except RuntimeError:
+            raise
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            logging.error(f"Error enviando PDF: {e}", exc_info=True)
+            raise RuntimeError("Error al enviar el PDF por WhatsApp.")
 
     def send_to(self, phone_number: str, message: str, pdf_path: str) -> None:
+        """Flujo completo: abre chat, envía mensaje y PDF."""
         self.open_chat(phone_number)
         self.send_message(message)
         self.send_pdf(pdf_path)
