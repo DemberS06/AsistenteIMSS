@@ -13,6 +13,7 @@ webdriver-manager==4.0.2     # descarga automática de ChromeDriver
 python-docx==1.1.2          # previsualizar textos de .docx
 pypdf==4.3.1                # extracción de texto PDF (fallback ligero)
 PyMuPDF==1.24.10            # (opcional) mejor extracción de PDF; quítalo si quieres un build más liviano
+PyPDF2==3.0.1               # lectura/escritura de PDF usada en tools/pdf.py
 
 # --- Dependencias base (pinned para evitar sorpresas) ---
 numpy>=2.0                 # requerido por pandas
