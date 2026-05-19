@@ -18,6 +18,7 @@ from config import DATA_DIR, ERROR_LOG_FILE, FILE_EXTENSIONS
 from models.trabajador_ti import TrabajadorTI
 from models.mensaje import Mensaje
 from work_flow.imss_ti import IMSSTiWorkflow
+from launcher import main as launcher_main
 
 
 # ──────────────────────────────────────────────────────────────
@@ -73,6 +74,11 @@ class InterfazTI(QWidget):
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: green;")
         outer.addWidget(self.status_label)
+
+        # Regresar al launcher
+        self.btn_regresar = QPushButton("Salir")
+        self.btn_regresar.clicked.connect(self._regresar_launcher)
+        outer.addWidget(self.btn_regresar) #agregando a la interfaz
         self.setLayout(outer)
 
     # ──────────────────────────────────────────────────────────
@@ -134,6 +140,14 @@ class InterfazTI(QWidget):
 
         panel.setLayout(layout)
         return panel
+    
+    def _regresar_launcher(self): # -> nose
+        print("Salir")
+        from launcher import Launcher
+        launcher = Launcher()
+        launcher.show()
+        self.close()
+
 
     def _build_panel_registro(self) -> QGroupBox:
         panel = QGroupBox("Registro IMSS")
