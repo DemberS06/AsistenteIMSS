@@ -504,7 +504,9 @@ class InterfazM40(QWidget):
 
     def _regresar_launcher(self):
         from launcher import Launcher
-        launcher = Launcher()
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        launcher = Launcher(app)
         launcher.show()
         self.close()
     

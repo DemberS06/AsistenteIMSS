@@ -12,14 +12,16 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
 from config import DATA_DIR
-from services.cache import save_preference, load_preference
+from services.cache import save_preference, load_preference, clear_cache
 
 
 class Launcher(QWidget):
     """Ventana de selección de modalidad (TI o M40)."""
     
-    def __init__(self):
+    def __init__(self, app):
         super().__init__()
+        self.app = app  # Guardar referencia a QApplication
+        self.main_window = None  # Para mantener referencia
         self.setWindowTitle("Asistente IMSS - Seleccionar Modalidad")
         self.setFixedSize(500, 300)
         self.setup_ui()
@@ -74,19 +76,23 @@ class Launcher(QWidget):
         # Guardar preferencia si está marcado
         if self.check_remember.isChecked():
             save_preference("mode", mode)
+        else:
+            clear_cache()
         
-        # Cerrar launcher y ejecutar main con modalidad
+        # Cerrar launcher
         self.close()
         
-        # Importar aquí para evitar dependencias circulares
+        # Crear ventana principal y mantener referencia
         if mode == "ti":
             from interfaz.ti import InterfazTI
             self.main_window = InterfazTI()
-            self.main_window.show()
         elif mode == "m40":
             from interfaz.m40 import InterfazM40
             self.main_window = InterfazM40()
-            self.main_window.show()
+        
+        # Guardar referencia en QApplication para evitar garbage collection
+        self.app.main_window = self.main_window
+        self.main_window.show()
 
 
 def main():
@@ -96,25 +102,29 @@ def main():
     # Verificar si hay preferencia guardada
     saved_mode = load_preference("mode")
     
+    # Crear la ventana apropiada según la preferencia
     if saved_mode:
         # Lanzar directamente en la modalidad guardada
         if saved_mode == "ti":
             from interfaz.ti import InterfazTI
             window = InterfazTI()
-            window.show()
         elif saved_mode == "m40":
             from interfaz.m40 import InterfazM40
             window = InterfazM40()
-            window.show()
         else:
             # Preferencia inválida, mostrar selector
-            window = Launcher()
-            window.show()
+            window = Launcher(app)
     else:
         # Mostrar selector
-        window = Launcher()
-        window.show()
+        window = Launcher(app)
     
+    # CRÍTICO: Guardar referencia en QApplication para evitar garbage collection
+    app.main_window = window
+    
+    # Mostrar la ventana
+    window.show()
+    
+    # Iniciar el event loop
     sys.exit(app.exec_())
 
 

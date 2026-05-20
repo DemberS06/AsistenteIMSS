@@ -31,7 +31,7 @@ hiddenimports += collect_submodules('numpy')
 # Excel - openpyxl
 hiddenimports += collect_submodules('openpyxl')
 
-# PDF - PyPDF2 (CRÍTICO - usado en tools/pdf.py)
+# PDF - PyPDF2 (CRÍTICO)
 hiddenimports.append('PyPDF2')
 hiddenimports.append('PyPDF2.generic')
 hiddenimports.append('PyPDF2._reader')
@@ -58,31 +58,15 @@ datas += tmp_ret[0]
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
 
-# python-docx si existe
-try:
-    tmp_ret = collect_all('docx')
-    datas += tmp_ret[0]
-    binaries += tmp_ret[1]
-    hiddenimports += tmp_ret[2]
-except:
-    pass
-
-# PyMuPDF (fitz) si existe
-try:
-    tmp_ret = collect_all('fitz')
-    datas += tmp_ret[0]
-    binaries += tmp_ret[1]
-    hiddenimports += tmp_ret[2]
-except:
-    pass
-
 # ============================================================
 # MÓDULOS INTERNOS DEL PROYECTO
 # ============================================================
 
 hiddenimports += [
-    # Config
+    # Config y launcher
     'src.config',
+    'src.launcher',
+    'src.main',
     
     # Tools
     'src.tools',
@@ -94,19 +78,27 @@ hiddenimports += [
     # Services
     'src.services',
     'src.services.imss_ti',
-    'src.services.whatsapp_web',
-    'src.services.imss_af',
     'src.services.imss_m40',
+    'src.services.imss_af',
+    'src.services.whatsapp_web',
     'src.services.cache',
     
     # Models
     'src.models',
     'src.models.trabajador',
+    'src.models.trabajador_ti',
+    'src.models.trabajador_m40',
     'src.models.mensaje',
     
-    # Workflow (renombrado temporalmente a _workflow)
-    'src._workflow',
-    'src._workflow.imss_ti',
+    # Interfaz (TI y M40)
+    'src.interfaz',
+    'src.interfaz.ti',
+    'src.interfaz.m40',
+    
+    # Workflow
+    'src.work_flow',
+    'src.work_flow.imss_ti',
+    'src.work_flow.imss_m40',
 ]
 
 # ============================================================
@@ -125,6 +117,8 @@ hiddenimports += [
     'os',
     'sys',
     'time',
+    'json',
+    'logging',
 ]
 
 # ============================================================
@@ -132,7 +126,7 @@ hiddenimports += [
 # ============================================================
 
 a = Analysis(
-    ['src\\interfaz.py'],
+    ['src\\launcher.py'],
     pathex=['src', '.'],
     binaries=binaries,
     datas=datas,
@@ -148,7 +142,6 @@ a = Analysis(
         'test',
         'tests',
         '_pytest',
-        'workflow.workflows',  # Excluir paquete workflow externo
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
