@@ -21,6 +21,6 @@ Thumbs.db
 dist/
 build/
 *.exe
-Data/
+
 installer/installer/Output/
 __pycache__/
