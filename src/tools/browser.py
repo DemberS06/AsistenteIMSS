@@ -11,6 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 
+import pyautogui
+
 from config import BROWSER_OPTIONS, DOWNLOAD_PREFS, TIMEOUTS
 
 
@@ -295,7 +297,6 @@ class BrowserTools:
         self.press(Keys.ENTER)
 
     def press_system_key(self, key: str) -> None:
-        import pyautogui
         pyautogui.press(key)
 
     def send_keys_to(self, element, *keys) -> None:
