@@ -140,14 +140,6 @@ class InterfazTI(QWidget):
 
         panel.setLayout(layout)
         return panel
-    
-    def _regresar_launcher(self): # -> nose
-        print("Salir")
-        from launcher import Launcher
-        launcher = Launcher()
-        launcher.show()
-        self.close()
-
 
     def _build_panel_registro(self) -> QGroupBox:
         panel = QGroupBox("Registro IMSS")
@@ -494,6 +486,12 @@ class InterfazTI(QWidget):
     # ──────────────────────────────────────────────────────────
     # Auxiliares UI
     # ──────────────────────────────────────────────────────────
+
+    def _regresar_launcher(self):
+        from launcher import Launcher
+        launcher = Launcher()
+        launcher.show()
+        self.close()
 
     def _fill_form(self, t: TrabajadorTI):
         self.name_line.setText(t.cliente)

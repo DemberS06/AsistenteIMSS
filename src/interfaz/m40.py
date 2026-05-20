@@ -56,23 +56,44 @@ class InterfazM40(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Asistente IMSS - Modalidad 40")
-        self.setGeometry(150, 80, 1200, 720)
+        self.setGeometry(150, 80, 1150, 600)
 
         self.workflow = IMSSM40Workflow(DATA_DIR)
 
         # Estado de sesión (no va al Excel)
         self._global_pdf_path: str = ""   # PDF global de mensajes seleccionado por el usuario
 
-        main_layout = QHBoxLayout()
-        main_layout.addWidget(self._build_panel_cliente(),   3)
-        main_layout.addWidget(self._build_panel_registro(),  2)
-        main_layout.addWidget(self._build_panel_mensaje(),   3)
-
+        # Layout principal con barra superior
         outer = QVBoxLayout()
+        
+        # Barra superior con botón Salir
+        top_bar = QHBoxLayout()
+        self.btn_regresar = QPushButton("Salir")
+        self.btn_regresar.clicked.connect(self._regresar_launcher)
+        self.btn_regresar.setMaximumWidth(100)
+        top_bar.addWidget(self.btn_regresar)
+        top_bar.addStretch()  # Empuja el botón a la izquierda
+        outer.addLayout(top_bar)
+        
+        # Layout de contenido principal
+        main_layout = QHBoxLayout()
+        
+        # Panel izquierdo (Cliente + IMSS apilados)
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(self._build_panel_cliente(), 3)  # 3 partes
+        left_layout.addWidget(self._build_panel_registro(), 2)  # 2 partes
+        
+        # Agregar layouts al main
+        main_layout.addLayout(left_layout, 2)  # Panel izquierdo: 2 partes de ancho
+        main_layout.addWidget(self._build_panel_mensaje(), 3)  # Panel derecho: 3 partes de ancho
+
         outer.addLayout(main_layout)
+        
+        # Barra de status al final
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: green;")
         outer.addWidget(self.status_label)
+        
         self.setLayout(outer)
 
     # ──────────────────────────────────────────────────────────
@@ -199,7 +220,7 @@ class InterfazM40(QWidget):
         self.word_preview = QTextEdit()
         self.word_preview.setReadOnly(True)
         self.word_preview.setPlaceholderText("Aquí se mostrará el texto del mensaje del cliente.")
-        layout.addWidget(self.word_preview)
+        layout.addWidget(self.word_preview, 3)  # 3 partes de espacio vertical
 
         # Enviar
         self.btn_send = QPushButton("Enviar mensaje")
@@ -481,6 +502,12 @@ class InterfazM40(QWidget):
     # Auxiliares UI
     # ──────────────────────────────────────────────────────────
 
+    def _regresar_launcher(self):
+        from launcher import Launcher
+        launcher = Launcher()
+        launcher.show()
+        self.close()
+    
     def _fill_form(self, t: TrabajadorM40):
         self.name_line.setText(t.cliente)
         self.number_line.setText(t.numero)
