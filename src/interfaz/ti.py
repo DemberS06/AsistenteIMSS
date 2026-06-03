@@ -172,15 +172,10 @@ class InterfazTI(QWidget):
         self.captcha_input.setPlaceholderText("Escribe el captcha")
         layout.addWidget(self.captcha_input)
 
-        # Registro / Descarga
-        reg_row = QHBoxLayout()
-        self.btn_register = QPushButton("Registrar cliente")
-        self.btn_register.clicked.connect(self._register_client)
+        # Descarga (registra si es necesario)
         self.btn_download = QPushButton("Descargar PDF")
         self.btn_download.clicked.connect(self._download_pdf)
-        reg_row.addWidget(self.btn_register)
-        reg_row.addWidget(self.btn_download)
-        layout.addLayout(reg_row)
+        layout.addWidget(self.btn_download)
 
         # Página / Captcha
         page_row = QHBoxLayout()
@@ -354,35 +349,13 @@ class InterfazTI(QWidget):
         self._set_imss_buttons_enabled(False)
         self._start_captcha_worker("Captcha actualizado.")
 
-    def _register_client(self):
-        captcha = self.captcha_input.text().strip()
-        if not captcha:
-            QMessageBox.warning(self, "Captcha requerido", "Escribe el captcha antes de registrar.")
-            return
-        self._set_imss_buttons_enabled(False)
-        self._set_status("Registrando cliente...", color="gray")
-        self._imss_worker = Worker(self.workflow.register_current_client, captcha)
-        self._imss_worker.finished.connect(self._on_register_done)
-        self._imss_worker.error.connect(self._on_register_error)
-        self._imss_worker.start()
-
-    def _on_register_done(self, pdf: str):
-        self.pdf_dir_label.setText(f"PDF del cliente: {pdf}")
-        self.captcha_input.clear()
-        self._start_captcha_worker("Cliente registrado y PDF descargado.")
-
-    def _on_register_error(self, error_msg: str):
-        self.captcha_input.clear()
-        self._start_captcha_worker()
-        self._show_error("Error en registro", RuntimeError(error_msg))
-
     def _download_pdf(self):
         captcha = self.captcha_input.text().strip()
         if not captcha:
             QMessageBox.warning(self, "Captcha requerido", "Escribe el captcha antes de descargar.")
             return
         self._set_imss_buttons_enabled(False)
-        self._set_status("Descargando PDF...", color="gray")
+        self._set_status("Obteniendo PDF...", color="gray")
         self._imss_worker = Worker(self.workflow.download_pdf_current_client, captcha)
         self._imss_worker.finished.connect(self._on_download_done)
         self._imss_worker.error.connect(self._on_download_error)
@@ -391,7 +364,7 @@ class InterfazTI(QWidget):
     def _on_download_done(self, pdf: str):
         self.pdf_dir_label.setText(f"PDF del cliente: {pdf}")
         self.captcha_input.clear()
-        self._start_captcha_worker("PDF descargado.")
+        self._start_captcha_worker("PDF descargado correctamente.")
 
     def _on_download_error(self, error_msg: str):
         self.captcha_input.clear()
@@ -561,8 +534,7 @@ class InterfazTI(QWidget):
         QMessageBox.warning(self, title, str(exc))
 
     def _set_imss_buttons_enabled(self, enabled: bool):
-        for btn in [self.btn_open_page, self.btn_show_captcha,
-                    self.btn_register, self.btn_download]:
+        for btn in [self.btn_open_page, self.btn_show_captcha, self.btn_download]:
             btn.setEnabled(enabled)
 
     def _set_wa_buttons_enabled(self, enabled: bool):

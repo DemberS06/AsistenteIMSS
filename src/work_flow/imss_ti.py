@@ -179,7 +179,10 @@ class IMSSTiWorkflow:
             raise RuntimeError("Error al registrar el cliente.")
 
     def download_pdf_current_client(self, captcha_value: str) -> str:
-        """Descarga el PDF del trabajador actual."""
+        """
+        Obtiene el PDF del trabajador actual.
+        Si ya está registrado lo descarga directo; si no, lo registra primero.
+        """
         self._ensure_excel()
         trabajador = self.get_current_client()
 
@@ -191,11 +194,11 @@ class IMSSTiWorkflow:
 
         try:
             carpeta_cliente = self._create_client_folder(
-                trabajador.carpeta_pdf, 
+                trabajador.carpeta_pdf,
                 trabajador.cliente
             )
 
-            pdf_path = self.imss.download_pdf_only(
+            pdf_path = self.imss.download_or_register(
                 fields=trabajador.to_imss_fields(captcha_value),
                 target_folder=carpeta_cliente,
             )
@@ -206,8 +209,8 @@ class IMSSTiWorkflow:
         except RuntimeError:
             raise
         except Exception as e:
-            logging.error(f"Error descargando PDF: {e}", exc_info=True)
-            raise RuntimeError("Error al descargar el PDF.")
+            logging.error(f"Error obteniendo PDF del cliente: {e}", exc_info=True)
+            raise RuntimeError("Error al obtener el PDF del cliente.")
 
     def open_whatsapp(self) -> None:
         """Abre WhatsApp Web."""

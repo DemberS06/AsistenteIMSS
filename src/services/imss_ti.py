@@ -346,26 +346,84 @@ class IMSSTiService:
         try:
             if not target_folder:
                 raise RuntimeError("No se ha seleccionado una carpeta de destino.")
-            
+
             self.process_form(fields)
             temp_paths = self.download_pdfs()
-            
+
             moved_paths = []
             for temp_path in temp_paths:
                 dest = Path(target_folder) / Path(temp_path).name
                 move_file(Path(temp_path), dest)
                 moved_paths.append(str(dest))
-            
+
             try:
                 self.browser.click("id", IMSS_TI_SELECTORS["salir_button"])
                 time.sleep(DELAYS["browser_exit"])
             except Exception:
                 pass
-            
+
             return moved_paths[0] if moved_paths else ""
-            
+
         except RuntimeError:
             raise
         except Exception as e:
             logging.error(f"Error descargando PDF: {e}", exc_info=True)
             raise RuntimeError("Error al descargar el PDF.")
+
+    def download_or_register(
+        self,
+        fields: Dict[str, str],
+        target_folder: str,
+    ) -> str:
+        """
+        Descarga los PDFs del trabajador. Si aún no está registrado en el portal,
+        completa el registro automáticamente antes de descargar.
+        La distinción se hace leyendo el estado de la página tras enviar el formulario:
+        - submit_cancelar visible → no registrado → registrar primero
+        - submit_cancelar ausente → ya registrado → descargar directo
+        """
+        try:
+            if not target_folder:
+                raise RuntimeError("No se ha seleccionado una carpeta de destino.")
+
+            # Paso 1: llenar y enviar el formulario (común a ambos flujos)
+            self.process_form(fields)
+
+            # Paso 2: detectar si el trabajador necesita ser registrado
+            if self.browser.exists(
+                "id", IMSS_TI_SELECTORS["submit_cancelar"],
+                timeout=TIMEOUTS["element_check"]
+            ):
+                # Verificar si IMSS reporta que ya está en el sistema
+                if self.browser.exists(
+                    "id", IMSS_TI_SELECTORS["mensaje_ya_registrado"],
+                    timeout=TIMEOUTS["button_sequence"]
+                ):
+                    raise RuntimeError("El trabajador ya está registrado en el sistema IMSS.")
+                # No registrado y sin mensaje de conflicto → completar registro
+                self.complete_registration()
+
+            # Paso 3: descargar PDFs (la página ya debe mostrar los links)
+            temp_paths = self.download_pdfs()
+
+            # Paso 4: mover de temp a la carpeta destino
+            moved_paths = []
+            for temp_path in temp_paths:
+                dest = Path(target_folder) / Path(temp_path).name
+                move_file(Path(temp_path), dest)
+                moved_paths.append(str(dest))
+
+            # Paso 5: salir del portal
+            try:
+                self.browser.click("id", IMSS_TI_SELECTORS["salir_button"])
+                time.sleep(DELAYS["browser_exit"])
+            except Exception:
+                pass
+
+            return moved_paths[0] if moved_paths else ""
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logging.error(f"Error en download_or_register: {e}", exc_info=True)
+            raise RuntimeError("Error al obtener los documentos del IMSS.")

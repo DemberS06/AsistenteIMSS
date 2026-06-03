@@ -478,7 +478,18 @@ class BrowserTools:
         self._driver.save_screenshot(path)
 
     def is_active(self) -> bool:
-        return self._driver is not None
+        if self._driver is None:
+            return False
+        try:
+            _ = self._driver.window_handles
+            return True
+        except Exception:
+            try:
+                self._driver.quit()
+            except Exception:
+                pass
+            self._driver = None
+            return False
 
     def same_element(self, el1, el2) -> bool:
         try:
