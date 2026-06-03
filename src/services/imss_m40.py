@@ -6,7 +6,7 @@ import time
 import logging
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from config import (
     IMSS_M40_URL,
@@ -335,6 +335,14 @@ class IMSSM40Service:
         except FileNotFoundError:
             return []
 
+    def is_download_available(self) -> bool:
+        """Verifica si el link de descarga PDF está presente y visible."""
+        try:
+            links = self.browser.find_all_css(IMSS_M40_SELECTORS["download_pdf_link"])
+            return bool(links) and any(self.browser.is_displayed(l) for l in links)
+        except Exception:
+            return False
+
     def download_pdfs(self) -> List[str]:
         """
         Descarga los PDFs del trabajador M40.
@@ -395,30 +403,39 @@ class IMSSM40Service:
         self,
         fields: Dict[str, str],
         target_folder: str,
-    ) -> str:
-        """Registra y descarga PDFs."""
+    ) -> Optional[str]:
+        """
+        Registra y descarga PDFs.
+        Retorna la ruta del PDF descargado, o None si la descarga no está disponible.
+        """
         try:
             if not target_folder:
                 raise RuntimeError("No se ha seleccionado una carpeta de destino.")
-            
+
             # Paso 1: Llenar formulario y hacer clic en Buscar (incluye espera del modal)
             self.process_form(fields)
-            
+
             # Paso 2: Abrir tile de inscripción
             if not self.browser.exists("id", IMSS_M40_SELECTORS["tile_inscripcion"], timeout=TIMEOUTS["button_sequence"]):
                 raise RuntimeError("No se encontró el menú de inscripción.")
             self.browser.click("id", IMSS_M40_SELECTORS["tile_inscripcion"])
             time.sleep(DELAYS["after_click"])
-            
-            # Paso 3: Descargar PDF
+
+            # Paso 3: Verificar si la descarga está disponible
+            if not self.is_download_available():
+                logging.info("Descarga no disponible para este trabajador, regresando a página principal.")
+                self.open_page()
+                return None
+
+            # Paso 4: Descargar PDF
             temp_paths = self.download_pdfs()
-            
-            # Paso 4: Cerrar wizard
+
+            # Paso 5: Cerrar wizard
             if self.browser.exists("id", IMSS_M40_SELECTORS["cerrar_wizard_button"], timeout=TIMEOUTS["button_sequence"]):
                 self.browser.click("id", IMSS_M40_SELECTORS["cerrar_wizard_button"])
                 time.sleep(DELAYS["after_click"])
-            
-            # Paso 5: Aceptar
+
+            # Paso 6: Aceptar
             try:
                 aceptar_buttons = self.browser.find_all_xpath(
                     f"//button[contains(., '{IMSS_M40_SELECTORS['aceptar_button_text']}')]"
@@ -428,25 +445,19 @@ class IMSSM40Service:
                     time.sleep(DELAYS["after_click"])
             except Exception:
                 pass  # No crítico si no encuentra el botón Aceptar
-            
+
             # Mover archivos a carpeta destino
             moved_paths = []
             for temp_path in temp_paths:
                 dest = Path(target_folder) / Path(temp_path).name
                 move_file(Path(temp_path), dest)
                 moved_paths.append(str(dest))
-            
-            # Salir
-            try:
-                salir_id = IMSS_M40_SELECTORS.get("salir_link")
-                if salir_id and self.browser.exists("id", salir_id, timeout=TIMEOUTS["element_check"]):
-                    self.browser.click("id", salir_id)
-                    time.sleep(DELAYS["browser_exit"])
-            except Exception:
-                pass
-            
+
+            # Regresar a página principal tras descarga exitosa
+            self.open_page()
+
             return moved_paths[0] if moved_paths else ""
-            
+
         except RuntimeError:
             raise
         except Exception as e:

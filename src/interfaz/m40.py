@@ -18,6 +18,7 @@ from config import DATA_DIR, ERROR_LOG_FILE, FILE_EXTENSIONS
 from models.trabajador_m40 import TrabajadorM40
 from models.mensaje import Mensaje
 from work_flow.imss_m40 import IMSSM40Workflow
+from worker import Worker
 
 
 # ──────────────────────────────────────────────────────────────
@@ -62,6 +63,12 @@ class InterfazM40(QWidget):
 
         # Estado de sesión (no va al Excel)
         self._global_pdf_path: str = ""   # PDF global de mensajes seleccionado por el usuario
+
+        # Referencias a workers activos (evita que el GC los destruya mientras corren)
+        self._imss_worker    = None
+        self._captcha_worker = None
+        self._wa_worker      = None
+        self._captcha_done_status = None
 
         # Layout principal con barra superior
         outer = QVBoxLayout()
@@ -324,7 +331,7 @@ class InterfazM40(QWidget):
         try:
             abs_path = os.path.abspath(path)
             self.workflow.update_field("PDF", abs_path)
-            self.pdf_dir_label.setText(f"PDF del cliente: {abs_path}")
+            self._update_pdf_label(abs_path)
             self._set_status("Ruta PDF guardada en Excel.")
         except Exception as e:
             self._show_error("Error guardando ruta PDF", e)
@@ -346,61 +353,81 @@ class InterfazM40(QWidget):
     # ──────────────────────────────────────────────────────────
 
     def _open_imss_page(self):
-        try:
-            self.workflow.open_imss_page()
-            self._show_captcha()
-            self._set_status("Página IMSS abierta.")
-        except Exception as e:
-            self._show_error("Error abriendo página", e)
+        self._set_imss_buttons_enabled(False)
+        self._set_status("Abriendo página IMSS...", color="gray")
+        self._imss_worker = Worker(self.workflow.open_imss_page)
+        self._imss_worker.finished.connect(
+            lambda _: self._start_captcha_worker("Página IMSS abierta.")
+        )
+        self._imss_worker.error.connect(
+            lambda e: (self._set_imss_buttons_enabled(True),
+                       self._show_error("Error abriendo página", RuntimeError(e)))
+        )
+        self._imss_worker.start()
 
     def _show_captcha(self):
-        try:
-            data = self.workflow.get_captcha()
-            pixmap = QPixmap()
-            pixmap.loadFromData(data)
-            self.captcha_label.setPixmap(pixmap)
-            self.captcha_label.setScaledContents(True)
-            self.captcha_label.setAlignment(Qt.AlignCenter)
-        except Exception as e:
-            self._show_error("Error mostrando captcha", e)
+        self._set_imss_buttons_enabled(False)
+        self._start_captcha_worker("Captcha actualizado.")
 
     def _register_client(self):
         captcha = self.captcha_input.text().strip()
         if not captcha:
             QMessageBox.warning(self, "Captcha requerido", "Escribe el captcha antes de registrar.")
             return
-        try:
-            pdf = self.workflow.register_current_client(captcha)
-            self.pdf_dir_label.setText(f"PDF del cliente: {pdf}")
-            self.captcha_input.clear()
-            self._show_captcha()
-            self._set_status("Cliente registrado y PDF descargado.")
-        except Exception as e:
-            self.captcha_input.clear()
-            try:
-                self._show_captcha()
-            except Exception:
-                pass
-            self._show_error("Error en registro", e)
+        self._set_imss_buttons_enabled(False)
+        self._set_status("Registrando cliente...", color="gray")
+        self._imss_worker = Worker(self.workflow.register_current_client, captcha)
+        self._imss_worker.finished.connect(self._on_register_done)
+        self._imss_worker.error.connect(self._on_register_error)
+        self._imss_worker.start()
+
+    def _on_register_done(self, result):
+        pdf, intentos = result
+        self.captcha_input.clear()
+        if pdf is None:
+            self._start_captcha_worker()
+            self._set_status(
+                f"Descarga no disponible aún. Intentos acumulados: {intentos}",
+                color="orange"
+            )
+        else:
+            self._update_pdf_label(pdf)
+            self._start_captcha_worker("Cliente registrado y PDF descargado.")
+
+    def _on_register_error(self, error_msg: str):
+        self.captcha_input.clear()
+        self._start_captcha_worker()
+        self._show_error("Error en registro", RuntimeError(error_msg))
 
     def _download_pdf(self):
         captcha = self.captcha_input.text().strip()
         if not captcha:
             QMessageBox.warning(self, "Captcha requerido", "Escribe el captcha antes de descargar.")
             return
-        try:
-            pdf = self.workflow.download_pdf_current_client(captcha)
-            self.pdf_dir_label.setText(f"PDF del cliente: {pdf}")
-            self.captcha_input.clear()
-            self._show_captcha()
-            self._set_status("PDF descargado.")
-        except Exception as e:
-            self.captcha_input.clear()
-            try:
-                self._show_captcha()
-            except Exception:
-                pass
-            self._show_error("Error descargando PDF", e)
+        self._set_imss_buttons_enabled(False)
+        self._set_status("Descargando PDF...", color="gray")
+        self._imss_worker = Worker(self.workflow.download_pdf_current_client, captcha)
+        self._imss_worker.finished.connect(self._on_download_done)
+        self._imss_worker.error.connect(self._on_download_error)
+        self._imss_worker.start()
+
+    def _on_download_done(self, result):
+        pdf, intentos = result
+        self.captcha_input.clear()
+        if pdf is None:
+            self._start_captcha_worker()
+            self._set_status(
+                f"Descarga no disponible aún. Intentos acumulados: {intentos}",
+                color="orange"
+            )
+        else:
+            self._update_pdf_label(pdf)
+            self._start_captcha_worker("PDF descargado correctamente.")
+
+    def _on_download_error(self, error_msg: str):
+        self.captcha_input.clear()
+        self._start_captcha_worker()
+        self._show_error("Error descargando PDF", RuntimeError(error_msg))
 
     # ──────────────────────────────────────────────────────────
     # Panel 3 — Mensaje / WhatsApp
@@ -442,11 +469,17 @@ class InterfazM40(QWidget):
             pass  # No interrumpir navegación si falla la búsqueda
 
     def _open_whatsapp(self):
-        try:
-            self.workflow.open_whatsapp()
-            self._set_status("WhatsApp Web abierto.")
-        except Exception as e:
-            self._show_error("Error abriendo WhatsApp", e)
+        self._set_wa_buttons_enabled(False)
+        self._set_status("Abriendo WhatsApp Web...", color="gray")
+        self._wa_worker = Worker(self.workflow.open_whatsapp)
+        self._wa_worker.finished.connect(
+            lambda _: (self._set_wa_buttons_enabled(True), self._set_status("WhatsApp Web abierto."))
+        )
+        self._wa_worker.error.connect(
+            lambda e: (self._set_wa_buttons_enabled(True),
+                       self._show_error("Error abriendo WhatsApp", RuntimeError(e)))
+        )
+        self._wa_worker.start()
 
     def _send_message(self):
         message_text = self.word_preview.toPlainText().strip()
@@ -463,11 +496,17 @@ class InterfazM40(QWidget):
         if confirm != QMessageBox.Yes:
             return
 
-        try:
-            self.workflow.send_whatsapp_current_client(message_text)
-            self._set_status("Mensaje enviado.")
-        except Exception as e:
-            self._show_error("Error enviando mensaje", e)
+        self._set_wa_buttons_enabled(False)
+        self._set_status("Enviando mensaje...", color="gray")
+        self._wa_worker = Worker(self.workflow.send_whatsapp_current_client, message_text)
+        self._wa_worker.finished.connect(
+            lambda _: (self._set_wa_buttons_enabled(True), self._set_status("Mensaje enviado."))
+        )
+        self._wa_worker.error.connect(
+            lambda e: (self._set_wa_buttons_enabled(True),
+                       self._show_error("Error enviando mensaje", RuntimeError(e)))
+        )
+        self._wa_worker.start()
 
     def _send_range(self):
         if not self._global_pdf_path:
@@ -484,19 +523,21 @@ class InterfazM40(QWidget):
             QMessageBox.warning(self, "Rango inválido", "Escribe números en los campos Desde y Hasta.")
             return
 
-        self.btn_send_range.setDisabled(True)
-        self._set_status(f"Iniciando envío {start+1}–{end+1}...")
+        self._set_wa_buttons_enabled(False)
+        self._set_status(f"Iniciando envío {start+1}–{end+1}...", color="gray")
+        self._wa_worker = Worker(self.workflow.send_range, start, end, self._global_pdf_path)
+        self._wa_worker.finished.connect(self._on_send_range_done)
+        self._wa_worker.error.connect(
+            lambda e: (self._set_wa_buttons_enabled(True),
+                       self._show_error("Error en envío por rango", RuntimeError(e)))
+        )
+        self._wa_worker.start()
 
-        try:
-            ok, fail = self.workflow.send_range(start, end, self._global_pdf_path)
-            color = "green" if fail == 0 else "orange"
-            self._set_status(
-                f"Rango completado. Éxitos: {ok} | Fallos: {fail}", color=color
-            )
-        except Exception as e:
-            self._show_error("Error en envío por rango", e)
-        finally:
-            self.btn_send_range.setDisabled(False)
+    def _on_send_range_done(self, result):
+        ok, fail = result
+        self._set_wa_buttons_enabled(True)
+        color = "green" if fail == 0 else "orange"
+        self._set_status(f"Rango completado. Éxitos: {ok} | Fallos: {fail}", color=color)
 
     # ──────────────────────────────────────────────────────────
     # Auxiliares UI
@@ -517,13 +558,22 @@ class InterfazM40(QWidget):
         self.rfc_line.setText(t.rfc)
         self.nss_line.setText(t.nss)
         self.email_line.setText(t.correo)
-        self.pdf_dir_label.setText(
-            f"PDF del cliente: {t.pdf}" if t.pdf else "PDF del cliente: (ninguno)"
-        )
+        self._update_pdf_label(t.pdf)
         self.folder_label.setText(
             f"Carpeta: {t.carpeta_pdf}" if t.carpeta_pdf else "Carpeta: (ninguna)"
         )
         self.word_preview.setPlainText("")
+
+    def _update_pdf_label(self, pdf_path: str):
+        """Actualiza el label del PDF con estilo distintivo si ya tiene ruta."""
+        if pdf_path:
+            self.pdf_dir_label.setText(f"PDF del cliente: {pdf_path}")
+            self.pdf_dir_label.setStyleSheet(
+                "color: #1a7a1a; font-weight: bold;"
+            )
+        else:
+            self.pdf_dir_label.setText("PDF del cliente: (ninguno)")
+            self.pdf_dir_label.setStyleSheet("")
 
     def _collect_form(self) -> TrabajadorM40:
         """Lee los campos del formulario y devuelve un Trabajador completo."""
@@ -549,6 +599,36 @@ class InterfazM40(QWidget):
         traceback.print_exc()
         self._set_status(str(exc), color="red")
         QMessageBox.warning(self, title, str(exc))
+
+    def _set_imss_buttons_enabled(self, enabled: bool):
+        for btn in [self.btn_open_page, self.btn_show_captcha,
+                    self.btn_register, self.btn_download]:
+            btn.setEnabled(enabled)
+
+    def _set_wa_buttons_enabled(self, enabled: bool):
+        for btn in [self.btn_open_whatsapp, self.btn_send, self.btn_send_range]:
+            btn.setEnabled(enabled)
+
+    def _start_captcha_worker(self, done_status: str = None):
+        self._captcha_done_status = done_status
+        self._captcha_worker = Worker(self.workflow.get_captcha)
+        self._captcha_worker.finished.connect(self._on_captcha_done)
+        self._captcha_worker.error.connect(self._on_captcha_error)
+        self._captcha_worker.start()
+
+    def _on_captcha_done(self, data: bytes):
+        pixmap = QPixmap()
+        pixmap.loadFromData(data)
+        self.captcha_label.setPixmap(pixmap)
+        self.captcha_label.setScaledContents(True)
+        self.captcha_label.setAlignment(Qt.AlignCenter)
+        self._set_imss_buttons_enabled(True)
+        if self._captcha_done_status:
+            self._set_status(self._captcha_done_status)
+
+    def _on_captcha_error(self, error_msg: str):
+        self._set_imss_buttons_enabled(True)
+        self._show_error("Error mostrando captcha", RuntimeError(error_msg))
 
 
 # ──────────────────────────────────────────────────────────────

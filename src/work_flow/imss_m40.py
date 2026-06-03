@@ -4,7 +4,7 @@ import os
 import logging
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from config import WHATSAPP_CONFIG, VALIDATION, EXCEL_COLUMNS_M40, ERROR_LOG_FILE
 from models.trabajador_m40 import TrabajadorM40
@@ -148,8 +148,12 @@ class IMSSM40Workflow:
         """Obtiene la imagen del captcha."""
         return self.imss.get_captcha_image()
 
-    def register_current_client(self, captcha_value: str) -> str:
-        """Registra el trabajador actual."""
+    def register_current_client(self, captcha_value: str) -> Tuple[Optional[str], int]:
+        """
+        Registra el trabajador actual.
+        Retorna (ruta_pdf, intentos). Si la descarga no estaba disponible, ruta_pdf=None
+        e intentos refleja el nuevo total acumulado.
+        """
         self._ensure_excel()
         trabajador = self.get_current_client()
 
@@ -161,7 +165,7 @@ class IMSSM40Workflow:
 
         try:
             carpeta_cliente = self._create_client_folder(
-                trabajador.carpeta_pdf, 
+                trabajador.carpeta_pdf,
                 trabajador.cliente
             )
 
@@ -170,17 +174,25 @@ class IMSSM40Workflow:
                 target_folder=carpeta_cliente,
             )
 
+            if pdf_path is None:
+                intentos = self._increment_intentos()
+                return None, intentos
+
             self.excel.update_row(self.current_index, {"PDF": pdf_path})
             self.excel.save()
-            return pdf_path
+            return pdf_path, trabajador.intentos
         except RuntimeError:
             raise
         except Exception as e:
             logging.error(f"Error registrando cliente: {e}", exc_info=True)
             raise RuntimeError("Error al registrar el cliente.")
 
-    def download_pdf_current_client(self, captcha_value: str) -> str:
-        """Descarga el PDF del trabajador actual."""
+    def download_pdf_current_client(self, captcha_value: str) -> Tuple[Optional[str], int]:
+        """
+        Descarga el PDF del trabajador actual.
+        Retorna (ruta_pdf, intentos). Si la descarga no estaba disponible, ruta_pdf=None
+        e intentos refleja el nuevo total acumulado.
+        """
         self._ensure_excel()
         trabajador = self.get_current_client()
 
@@ -192,7 +204,7 @@ class IMSSM40Workflow:
 
         try:
             carpeta_cliente = self._create_client_folder(
-                trabajador.carpeta_pdf, 
+                trabajador.carpeta_pdf,
                 trabajador.cliente
             )
 
@@ -201,14 +213,26 @@ class IMSSM40Workflow:
                 target_folder=carpeta_cliente,
             )
 
+            if pdf_path is None:
+                intentos = self._increment_intentos()
+                return None, intentos
+
             self.excel.update_row(self.current_index, {"PDF": pdf_path})
             self.excel.save()
-            return pdf_path
+            return pdf_path, trabajador.intentos
         except RuntimeError:
             raise
         except Exception as e:
             logging.error(f"Error descargando PDF: {e}", exc_info=True)
             raise RuntimeError("Error al descargar el PDF.")
+
+    def _increment_intentos(self) -> int:
+        """Suma 1 a la columna INTENTOS del cliente actual y guarda el Excel."""
+        trabajador = self.get_current_client()
+        new_val = trabajador.intentos + 1
+        self.excel.update_row(self.current_index, {"INTENTOS": new_val})
+        self.excel.save()
+        return new_val
 
     def open_whatsapp(self) -> None:
         """Abre WhatsApp Web."""

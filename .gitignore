@@ -24,3 +24,6 @@ build/
 
 installer/installer/Output/
 __pycache__/
+
+# --- Claude scripts / docs generados ---
+claude_scripts/

@@ -18,6 +18,7 @@ class TrabajadorM40:
     carpeta_pdf: str = ""   # CARPETAPDF — carpeta destino de descarga
     pdf:         str = ""   # PDF        — ruta del PDF a enviar por WhatsApp
     mensaje:     str = ""   # MENSAJE    — ruta del PDF global de mensajes
+    intentos:    int = 0    # INTENTOS   — intentos fallidos de descarga M40
 
     # ----------------------------------------------------------------
     # Conversión desde/hacia fila del Excel
@@ -26,6 +27,11 @@ class TrabajadorM40:
     @classmethod
     def from_row(cls, row: dict) -> TrabajadorM40:
         """Crea un TrabajadorM40 desde una fila de Excel."""
+        raw_intentos = row.get("INTENTOS", 0)
+        try:
+            intentos_val = int(raw_intentos) if raw_intentos else 0
+        except (ValueError, TypeError):
+            intentos_val = 0
         return cls(
             id          = row.get("ID",          ""),
             cliente     = row.get("CLIENTE",     ""),
@@ -37,6 +43,7 @@ class TrabajadorM40:
             carpeta_pdf = row.get("CARPETAPDF",  ""),
             pdf         = row.get("PDF",         ""),
             mensaje     = row.get("MENSAJE",     ""),
+            intentos    = intentos_val,
         )
 
     def to_row(self) -> dict:
@@ -52,6 +59,7 @@ class TrabajadorM40:
             "CARPETAPDF": self.carpeta_pdf,
             "PDF":        self.pdf,
             "MENSAJE":    self.mensaje,
+            "INTENTOS":   self.intentos,
         }
 
     def to_imss_fields(self, captcha: str) -> dict:

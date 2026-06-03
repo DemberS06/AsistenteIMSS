@@ -289,7 +289,7 @@ EXCEL_COLUMNS_TI = [
     "MENSAJE",
 ]
 
-# M40 - Mismas columnas que TI
+# M40 - Mismas columnas que TI + INTENTOS de descarga
 EXCEL_COLUMNS_M40 = [
     "ID",
     "CLIENTE",
@@ -301,6 +301,7 @@ EXCEL_COLUMNS_M40 = [
     "CARPETAPDF",
     "PDF",
     "MENSAJE",
+    "INTENTOS",
 ]
 
 
