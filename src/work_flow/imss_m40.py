@@ -217,6 +217,7 @@ class IMSSM40Workflow:
                 intentos = self._increment_intentos()
                 return None, intentos
 
+            pdf_path = self._rename_pdf(pdf_path, trabajador.cliente)
             self.excel.update_row(self.current_index, {"PDF": pdf_path})
             self.excel.save()
             return pdf_path, trabajador.intentos
@@ -233,6 +234,19 @@ class IMSSM40Workflow:
         self.excel.update_row(self.current_index, {"INTENTOS": new_val})
         self.excel.save()
         return new_val
+
+    def _rename_pdf(self, pdf_path: str, client_name: str) -> str:
+        """Renombra el PDF descargado a '[cliente]_[nombre_original]'."""
+        original = Path(pdf_path)
+        if not original.exists():
+            return pdf_path
+        safe_client = "".join(
+            c for c in client_name
+            if c.isalnum() or c in VALIDATION["allowed_folder_chars"]
+        ).strip() or VALIDATION["fallback_folder_name"]
+        new_path = original.parent / f"{safe_client}_{original.name}"
+        original.rename(new_path)
+        return str(new_path)
 
     def open_whatsapp(self) -> None:
         """Abre WhatsApp Web."""
