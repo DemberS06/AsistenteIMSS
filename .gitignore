@@ -1,29 +1,47 @@
-# --- Python ---
+# === Python ===
 __pycache__/
 *.py[cod]
+*.pyo
 
-# --- Virtual environment ---
+# === Virtual environment ===
+.venv/
 venv/
 .env/
-.venv/
+env/
 
-# --- Pygame ---
-*.log
-
-# --- OS / Editor ---
-.DS_Store
-Thumbs.db
-
-# --- IDEs ---
-.vscode/
-.idea/
-
+# === Build / distribución ===
 dist/
 build/
 *.exe
+*.spec.bak
+*.pkg
 
+# === PyInstaller ===
+*.manifest
+
+# === Datos de trabajo (datos reales de clientes) ===
+#Data/
+
+# === Archivos de respaldo ===
+*.bak
+*.tmp
+
+# === Logs ===
+*.log
+
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === IDEs ===
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# === Inno Setup output ===
 installer/installer/Output/
-__pycache__/
 
-# --- Claude scripts / docs generados ---
+# === Claude scripts / docs generados ===
 claude_scripts/
