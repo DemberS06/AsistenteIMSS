@@ -218,9 +218,10 @@ class IMSSM40Workflow:
                 return None, intentos
 
             pdf_path = self._rename_pdf(pdf_path, trabajador.cliente)
+            intentos = self._increment_intentos()
             self.excel.update_row(self.current_index, {"PDF": pdf_path})
             self.excel.save()
-            return pdf_path, trabajador.intentos
+            return pdf_path, intentos
         except RuntimeError:
             raise
         except Exception as e:
@@ -245,7 +246,7 @@ class IMSSM40Workflow:
             if c.isalnum() or c in VALIDATION["allowed_folder_chars"]
         ).strip() or VALIDATION["fallback_folder_name"]
         new_path = original.parent / f"{safe_client}_{original.name}"
-        original.rename(new_path)
+        original.replace(new_path)
         return str(new_path)
 
     def open_whatsapp(self) -> None:

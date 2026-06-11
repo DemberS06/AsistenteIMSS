@@ -3,15 +3,22 @@
 Launcher del Asistente IMSS.
 Permite seleccionar entre modalidad TI o M40 con opción de recordar preferencia.
 """
+import os
 import sys
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QPushButton, 
+    QApplication, QWidget, QVBoxLayout, QPushButton,
     QLabel, QCheckBox
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 
 from config import DATA_DIR
+
+
+def _app_icon_path() -> str:
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, "assets", "app.ico")
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "app.ico")
 from services.cache import save_preference, load_preference, clear_cache
 
 
@@ -98,6 +105,9 @@ class Launcher(QWidget):
 def main():
     """Entry point del launcher."""
     app = QApplication(sys.argv)
+    icon_path = _app_icon_path()
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
     
     # Verificar si hay preferencia guardada
     saved_mode = load_preference("mode")

@@ -17,9 +17,7 @@ block_cipher = None
 ROOT = Path(SPECPATH).resolve()
 SRC = ROOT / "src"
 
-ICON = None
-# Si tienes ícono, usa por ejemplo:
-# ICON = str(ROOT / "assets" / "icons" / "app.ico")
+ICON = str(ROOT / "assets" / "app.ico")
 
 # ==========================================================
 # Hidden imports
@@ -29,6 +27,7 @@ hiddenimports = []
 # Paquetes propios. OJO: NO usar "src.config" porque tu código importa "config".
 hiddenimports += [
     "config",
+    "worker",
     "launcher",
 
     "interfaz",
@@ -84,6 +83,11 @@ hiddenimports += [
     "selenium.webdriver.common.action_chains",
     "selenium.webdriver.support.ui",
     "selenium.webdriver.support.expected_conditions",
+    "webdriver_manager",
+    "webdriver_manager.chrome",
+    "fitz",
+    "pymupdf",
+    "pypdf",
 ]
 
 # CRÍTICO: pyautogui y dependencias indirectas.
@@ -115,7 +119,10 @@ for pkg in (
     "numpy",
     "openpyxl",
     "selenium",
+    "webdriver_manager",
     "PyPDF2",
+    "pypdf",
+    "fitz",
     "pyautogui",
     "pyscreeze",
     "pygetwindow",
@@ -142,7 +149,10 @@ for pkg in (
     "numpy",
     "openpyxl",
     "selenium",
+    "webdriver_manager",
     "PyPDF2",
+    "pypdf",
+    "fitz",
     "pyautogui",
     "pyscreeze",
     "pygetwindow",
@@ -167,10 +177,9 @@ for pkg in (
         except Exception:
             pass
 
-# Si luego agregas assets reales, descomenta:
-# ASSETS = ROOT / "assets"
-# if ASSETS.exists():
-#     datas.append((str(ASSETS), "assets"))
+ASSETS = ROOT / "assets"
+if ASSETS.exists():
+    datas.append((str(ASSETS), "assets"))
 
 # No metas Data/ de pruebas al ejecutable.
 

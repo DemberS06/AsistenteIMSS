@@ -308,20 +308,30 @@ class IMSSM40Service:
         """Espera a que terminen todas las descargas."""
         if timeout is None:
             timeout = TIMEOUTS["download"]
-        
+
         end_time = time.time() + timeout
+
+        # Fase 1: esperar a que aparezca al menos un archivo (la descarga inició)
+        while time.time() < end_time:
+            try:
+                if os.listdir(self.temp_download_dir):
+                    break
+            except FileNotFoundError:
+                pass
+            time.sleep(DELAYS["download_poll"])
+        else:
+            return False  # nunca inició la descarga
+
+        # Fase 2: esperar a que desaparezcan los .crdownload (la descarga terminó)
         while time.time() < end_time:
             try:
                 entries = os.listdir(self.temp_download_dir)
-                still_downloading = any(
-                    name.endswith(DOWNLOAD_CONFIG["crdownload_extension"]) 
-                    for name in entries
-                )
-                if not still_downloading:
+                if not any(f.endswith(DOWNLOAD_CONFIG["crdownload_extension"]) for f in entries):
                     return True
             except FileNotFoundError:
                 pass
             time.sleep(DELAYS["download_poll"])
+
         return False
 
     def _get_temp_files(self) -> List[str]:
@@ -335,11 +345,39 @@ class IMSSM40Service:
         except FileNotFoundError:
             return []
 
+    def _switch_to_pagos_frame(self, timeout: int = None) -> bool:
+        """Busca el iframe que contiene #pagos y cambia el contexto a él."""
+        if timeout is None:
+            timeout = TIMEOUTS["default"]
+
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            try:
+                iframes = self.browser.find_all_css("iframe")
+                for iframe in iframes:
+                    try:
+                        self.browser.switch_to_frame(element=iframe)
+                        if self.browser.find_all_css("#pagos"):
+                            return True
+                        self.browser.switch_to_default()
+                    except Exception:
+                        try:
+                            self.browser.switch_to_default()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+        return False
+
     def is_download_available(self) -> bool:
         """Verifica si el link de descarga PDF está presente y visible."""
         try:
-            links = self.browser.find_all_css(IMSS_M40_SELECTORS["download_pdf_link"])
-            return bool(links) and any(self.browser.is_displayed(l) for l in links)
+            element = self.browser.run_js(
+                "return document.querySelector('[onclick*=\"imprimePago\"]');"
+            )
+            return element is not None and self.browser.is_displayed(element)
         except Exception:
             return False
 
@@ -350,32 +388,21 @@ class IMSSM40Service:
         El PDF se descarga haciendo clic en <a class="link print"> que ejecuta imprimePago(...)
         """
         try:
-            download_selector = IMSS_M40_SELECTORS["download_pdf_link"]
-            
-            links = self.browser.find_all_css(download_selector)
-            
-            if not links:
-                logging.error(f"No se encontraron links de descarga con selector: {download_selector}")
-                raise RuntimeError("No se encontraron PDFs para descargar. Verifica que el registro se completó.")
-            
-            logging.info(f"Links de descarga encontrados: {len(links)}")
-            
-            clicked = False
-            for i, link in enumerate(links):
-                try:
-                    if self.browser.is_displayed(link):
-                        link.click()
-                        time.sleep(DELAYS["pdf_icon_click"])
-                        clicked = True
-                        logging.info(f"Clic en link de descarga #{i}")
-                        break
-                except Exception as e:
-                    logging.error(f"Error haciendo clic en link {i}: {e}")
-                    if i == len(links) - 1:
-                        raise
-            
+            clicked = self.browser.run_js("""
+                var links = document.querySelectorAll('[onclick*="imprimePago"]');
+                for (var i = 0; i < links.length; i++) {
+                    if (links[i].offsetParent !== null) {
+                        links[i].scrollIntoView({block: 'center'});
+                        links[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            """)
+
             if not clicked:
-                raise RuntimeError("No se pudo hacer clic en el link de descarga.")
+                logging.error("No se encontró link de descarga via JS querySelector")
+                raise RuntimeError("No se encontraron PDFs para descargar. Verifica que el registro se completó.")
             
             ok = self._wait_for_all_downloads()
             if not ok:
@@ -419,21 +446,33 @@ class IMSSM40Service:
             if not self.browser.exists("id", IMSS_M40_SELECTORS["tile_inscripcion"], timeout=TIMEOUTS["button_sequence"]):
                 raise RuntimeError("No se encontró el menú de inscripción.")
             self.browser.click("id", IMSS_M40_SELECTORS["tile_inscripcion"])
-            time.sleep(DELAYS["after_click"])
 
-            # Paso 3: Verificar si la descarga está disponible
-            if not self.is_download_available():
-                logging.info("Descarga no disponible para este trabajador, regresando a página principal.")
+            # Cambiar al iframe que contiene #pagos
+            if not self._switch_to_pagos_frame():
+                logging.info("Tabla de pagos no encontrada en ningún iframe.")
                 self.open_page()
                 return None
 
-            # Paso 4: Descargar PDF
+            # Paso 3: Verificar si la descarga está disponible (dentro del iframe)
+            if not self.is_download_available():
+                logging.info("Descarga no disponible para este trabajador.")
+                self.browser.switch_to_default()
+                self.open_page()
+                return None
+
+            # Paso 4: Descargar PDF (dentro del iframe)
             temp_paths = self.download_pdfs()
 
+            # Volver al documento principal antes de continuar
+            self.browser.switch_to_default()
+
             # Paso 5: Cerrar wizard
-            if self.browser.exists("id", IMSS_M40_SELECTORS["cerrar_wizard_button"], timeout=TIMEOUTS["button_sequence"]):
-                self.browser.click("id", IMSS_M40_SELECTORS["cerrar_wizard_button"])
-                time.sleep(DELAYS["after_click"])
+            try:
+                if self.browser.exists("id", IMSS_M40_SELECTORS["cerrar_wizard_button"], timeout=TIMEOUTS["button_sequence"]):
+                    self.browser.click("id", IMSS_M40_SELECTORS["cerrar_wizard_button"])
+                    time.sleep(DELAYS["after_click"])
+            except Exception:
+                pass
 
             # Paso 6: Aceptar
             try:
@@ -454,7 +493,11 @@ class IMSSM40Service:
                 moved_paths.append(str(dest))
 
             # Regresar a página principal tras descarga exitosa
-            self.open_page()
+            try:
+                self.open_page()
+            except Exception as e:
+                logging.error(f"No se pudo regresar a página principal: {e}", exc_info=True)
+                self.close()
 
             return moved_paths[0] if moved_paths else ""
 

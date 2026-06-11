@@ -99,8 +99,10 @@ IMSS_M40_SELECTORS = {
     # ──────────────────────────────────────────────────────
     # Tercera pantalla - Descargar PDF
     # ──────────────────────────────────────────────────────
+    "pagos_div": "pagos",          # div que contiene la tabla de pagos
     # El link <a> que contiene el icono y ejecuta onclick="imprimePago(...)"
-    "download_pdf_link": "a.link.print",  # CSS selector del <a>
+    "download_pdf_link": "a.link.print",           # CSS selector del <a>
+    "download_pdf_xpath": "//a[contains(@onclick,'imprimePago')]",  # XPath alternativo
     
     # ──────────────────────────────────────────────────────
     # Cuarta pantalla - Cerrar wizard
@@ -119,12 +121,12 @@ IMSS_M40_SELECTORS = {
     "salir_link": "cerrarSesionLink",
     
     # ──────────────────────────────────────────────────────
-    # Mensajes de error (pendientes de confirmar)
+    # Mensajes de error
     # ──────────────────────────────────────────────────────
-    "error_curp": None,        # TODO: Confirmar selector
-    "error_email": None,       # TODO: Confirmar selector
-    "error_form": None,        # TODO: Confirmar selector
-    "mensaje_ya_registrado": None,  # TODO: Confirmar selector
+    "error_curp": "curp.errors",
+    "error_email": "correoElectronicoFiscal.correo.errors",
+    "error_form": "errorFormGeneral.errors",
+    "mensaje_ya_registrado": None,
 }
 
 
