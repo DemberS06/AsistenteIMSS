@@ -8,6 +8,7 @@ openpyxl==3.1.5             # leer/escribir .xlsx
 # --- Navegación web / WhatsApp Web ---
 selenium==4.23.1             # automatización del navegador
 webdriver-manager==4.0.2     # descarga automática de ChromeDriver
+PyAutoGUI==0.9.54            # automatización de teclado y ventanas del sistema
 
 # --- Word / PDF ---
 python-docx==1.1.2          # previsualizar textos de .docx
